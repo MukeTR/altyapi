@@ -32,6 +32,7 @@ import { storefrontCartRoutes } from "./modules/storefront-cart";
 import { paymentCallbackRoutes } from "./modules/payment-callbacks";
 import { orderRoutes } from "./modules/orders";
 import { trackingRoutes } from "./modules/tracking";
+import { integrationRoutes } from "./modules/integrations";
 
 /** bigint (money minor units) is serialized as a decimal string on the wire. */
 const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
@@ -116,6 +117,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(storefrontCartRoutes, { deps });
   await app.register(orderRoutes, { deps });
   await app.register(trackingRoutes, { deps });
+  await app.register(integrationRoutes, { deps });
   // Encapsulated: custom body parsing (raw body + form) only applies to provider callbacks.
   await app.register(paymentCallbackRoutes, { deps });
 

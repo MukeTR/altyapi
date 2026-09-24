@@ -85,6 +85,13 @@
       "when": 1790252374748,
       "tag": "0011_tracking_layer",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790253859022,
+      "tag": "0012_integrations",
+      "breakpoints": true
     }
   ]
 }

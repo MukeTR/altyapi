@@ -8,6 +8,7 @@ import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
 import { catalogEventHandlers, catalogJobHandlers, catalogScheduledTasks } from "./handlers/catalog";
 import { orderScheduledTasks } from "./handlers/orders";
 import { marketingEventHandlers } from "./handlers/marketing";
+import { integrationJobHandlers, integrationScheduledTasks } from "./handlers/integrations";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
@@ -21,7 +22,7 @@ const runtime = new ConsumerRuntime({
   logger: deps.logger,
   maxAttempts: deps.env.QUEUE_MAX_ATTEMPTS,
   eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps, r2), ...marketingEventHandlers(deps)],
-  jobHandlers: [...domainJobHandlers(deps), ...catalogJobHandlers(deps, r2)],
+  jobHandlers: [...domainJobHandlers(deps), ...catalogJobHandlers(deps, r2), ...integrationJobHandlers(deps)],
 });
 
 await syncBuiltinSectionDefinitions(deps.db);
@@ -39,6 +40,7 @@ const loops = [
       { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db) },
       ...catalogScheduledTasks(deps),
       ...orderScheduledTasks(deps),
+      ...integrationScheduledTasks(deps),
     ],
     control,
   ),

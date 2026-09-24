@@ -13,3 +13,4 @@ export * from "./marketing";
 export * from "./checkout";
 export * from "./orders";
 export * from "./payments";
+export * from "./integrations";

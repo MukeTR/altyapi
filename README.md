@@ -226,3 +226,37 @@ Yerel geliştirmede R2 yerine MinIO kullanılabilir: `docker compose up -d minio
   yoksa Meta/TikTok'a, analitik izni veya GA client id yoksa GA4'e gönderilmez. Her hedef `conversion_deliveries`
   tablosunda bir kez kaydedilir; geçici hatalar (5xx/429) kuyrukta yeniden denenir.
 - Env: `META_GRAPH_API_VERSION` (varsayılan `v24.0`).
+
+### Entegratör ve pazaryeri bağlantıları
+
+Araştırma dosyasındaki bulgulara göre kuruldu: incelenen entegratörlerin hiçbirinde webhook yok, bu yüzden tüm
+bağlantılar periyodik sorgu (polling) ile çalışır; API'nin izin verdiği yerde imleçle artımlı okunur.
+
+- **Üç erişim yolu**: entegratör API'si (okuma + yazma), pazaryerine doğrudan bağlantı (yalnızca okuma),
+  entegratörün XML/CSV/Excel dışa aktarımı (yalnızca okuma).
+- **Hazır bağlayıcılar** (`packages/integrations`):
+  - StockMount — resmi kılavuz v1.6: DoLogin/ApiCode (00006'da yeniden giriş), mağaza × durum bazında `GetSales`
+    (LastModificationTime ile artımlı), `GetProducts` (100/sayfa), ürün koduyla stok/fiyat yazma.
+  - Dopigo — panel girişiyle token, sipariş ve ürün listeleri (endpoint başına 2 istek/sn). Yazma kapalı:
+    stok/fiyat alanları Dopigo tarafından teyit edilene kadar değişiklik Dopigo panelinde yapılır.
+  - Trendyol — siparişler `orders/stream` (son değişiklik tarihi, 14 günlük pencereler), stok/fiyat
+    `inventory-and-price`. Hepsiburada — resmi OpenAPI: açık/iptal kalemler, kargolandı/teslim edildi paketleri,
+    ilanlar. Pazaryerleri yalnızca okunur.
+  - XML/CSV/Excel beslemesi — ürün içe aktarma ayrıştırıcılarıyla; URL şifreli saklanır, SSRF korumalı indirilir.
+- **Doküman bekleyenler**: Entegra (Postman dokümanı bu ortamdan erişilemedi), n11 REST, Sopyo, PraPazar. Listelenir
+  ama bağlanamaz; tahminle uç nokta yazılmadı. Bu müşteriler pazaryeri veya besleme bağlayıcısını kullanır.
+- **Veri sahipliği**: stok, fiyat, içerik ve sipariş karşılama için sahip sistem seçilir (`…/integrations/ownership`).
+  Okuma her kaynaktan yapılır; yazma yalnızca sahip üzerinden: altyapi ise altyapi'de, yazma destekleyen entegratör
+  ise entegratör API'siyle (ardından altyapi'ye yansıtılır), pazaryeri/besleme/ERP ise hiçbir şey yazılmaz ve
+  "değişikliği X üzerinde yapın" önerisi döner. Pazaryeri fiyat sahibi olamaz (komisyonlu fiyat).
+- **Uyumsuzluk sinyalleri**: SKU (sonra barkod) eşleşmesiyle stok ve fiyat karşılaştırılır; farklılık düzeltilmez,
+  sahip değeri işaretlenerek `…/integrations/discrepancies` altında gösterilir. Stok sahibi bir bağlantıysa
+  altyapi stoğu ona göre güncellenir.
+- **Durum normalizasyonu**: her kanalın ham durumu saklanır ve ortak yaşam döngüsüne çevrilir
+  (`pending_payment … delivered, cancelled, returned`).
+- **KVKK**: dış siparişlerde TCKN, vergi no, telefon, e-posta ve açık adres saklanmaz; yalnızca ad, il, ilçe.
+- **Güvenlik**: kimlik bilgileri ve oturum token'ları KMS zarf şifrelemesiyle saklanır, API'den dönmez, denetim
+  kaydına yazılmaz. Kimlik hatasında bağlantı `error` durumuna geçer ve sorgu durur.
+- **Çalışma**: worker her 15 sn'de vadesi gelen bağlantıları kiralar (SKIP LOCKED) ve `integration.sync` işi
+  kuyruğa atar; sayfa bütçesi dolarsa imleçten devam eder; Redis tabanlı bağlantı başına hız sınırı uygulanır.
+- İzin: `integrations:read` / `integrations:manage`; stok/fiyat yazımı ayrıca `inventory:write` / `pricing:write`.

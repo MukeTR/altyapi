@@ -80,6 +80,53 @@ export async function fetchRemoteImage(rawUrl: string): Promise<{ bytes: Buffer;
   return { bytes: Buffer.concat(chunks), contentType };
 }
 
+const DOCUMENT_TYPES = new Set([
+  "text/csv",
+  "text/plain",
+  "text/xml",
+  "application/xml",
+  "application/rss+xml",
+  "application/octet-stream",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+/**
+ * SSRF-safe download of a merchant-provided export (XML/CSV/XLSX feed of an integrator):
+ * https only, public addresses only, optional Basic auth, no redirects, size limit.
+ */
+export async function fetchRemoteDocument(
+  rawUrl: string,
+  opts: { maxBytes?: number; basicAuth?: { username: string; password: string } | null } = {},
+): Promise<{ bytes: Buffer; contentType: string }> {
+  const maxBytes = opts.maxBytes ?? 100 * 1024 * 1024;
+  let url: URL;
+  try {
+    url = new URL(rawUrl.trim());
+  } catch {
+    throw new Error("invalid_url");
+  }
+  if (url.protocol !== "https:") throw new Error("https_required");
+  if (url.username || url.password) throw new Error("credentials_in_url");
+  if (isIP(url.hostname) && isPrivateAddress(url.hostname)) throw new Error("host_not_allowed");
+  const headers: Record<string, string> = { accept: "text/csv, application/xml, text/xml, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, */*;q=0.1" };
+  if (opts.basicAuth) headers.authorization = `Basic ${Buffer.from(`${opts.basicAuth.username}:${opts.basicAuth.password}`, "utf8").toString("base64")}`;
+  const res = await undiciFetch(url, { redirect: "manual", signal: AbortSignal.timeout(120_000), headers, dispatcher: outboundAgent });
+  if (res.status >= 300 && res.status < 400) throw new Error("redirect_not_followed");
+  if (!res.ok || !res.body) throw new Error(`http_${res.status}`);
+  const contentType = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+  if (contentType && !DOCUMENT_TYPES.has(contentType)) throw new Error("unsupported_content_type");
+  if (Number(res.headers.get("content-length") ?? "0") > maxBytes) throw new Error("too_large");
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    size += chunk.length;
+    if (size > maxBytes) throw new Error("too_large");
+    chunks.push(Buffer.from(chunk));
+  }
+  return { bytes: Buffer.concat(chunks), contentType };
+}
+
 /** Downloads an image into the storefront-public bucket and registers a ready asset. */
 export async function importRemoteImage(
   db: Database,

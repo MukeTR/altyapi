@@ -19,6 +19,7 @@
     "@altyapi/database": "workspace:*",
     "@altyapi/domains": "workspace:*",
     "@altyapi/events": "workspace:*",
+    "@altyapi/integrations": "workspace:*",
     "@altyapi/inventory": "workspace:*",
     "@altyapi/marketing": "workspace:*",
     "@altyapi/observability": "workspace:*",
