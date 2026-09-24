@@ -10,6 +10,7 @@ import {
   eq,
   isNull,
   lt,
+  pgTimestamp,
   sql,
   withPlatformTx,
   withTenantTx,
@@ -359,10 +360,10 @@ export async function cleanupAssets(db: Database, r2: R2Storage, limit = 200): P
       .select({ id: contentAssets.id, bucket: contentAssets.bucket, objectKey: contentAssets.objectKey })
       .from(contentAssets)
       .where(
-        sql`((${contentAssets.deletedAt} < ${retentionCutoff}
+        sql`((${contentAssets.deletedAt} < ${pgTimestamp(retentionCutoff)}
               and not exists (select 1 from ${assetReferences} r where r.asset_id = ${contentAssets.id}))
-          or (${contentAssets.status} = 'pending_upload' and ${contentAssets.uploadExpiresAt} < ${abandonedCutoff})
-          or (${contentAssets.status} = 'failed' and ${contentAssets.updatedAt} < ${abandonedCutoff}))`,
+          or (${contentAssets.status} = 'pending_upload' and ${contentAssets.uploadExpiresAt} < ${pgTimestamp(abandonedCutoff)})
+          or (${contentAssets.status} = 'failed' and ${contentAssets.updatedAt} < ${pgTimestamp(abandonedCutoff)}))`,
       )
       .limit(limit),
   );

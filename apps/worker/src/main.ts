@@ -5,6 +5,7 @@ import { createWorkerDeps } from "./deps";
 import { consumeLoop, outboxLoop, schedulerLoop, type LoopControl } from "./loops";
 import { domainEventHandlers, domainJobHandlers, scheduleDomainChecks } from "./handlers/domains";
 import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
+import { catalogEventHandlers, catalogScheduledTasks } from "./handlers/catalog";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
@@ -17,7 +18,7 @@ const runtime = new ConsumerRuntime({
   queue: deps.queue,
   logger: deps.logger,
   maxAttempts: deps.env.QUEUE_MAX_ATTEMPTS,
-  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2)],
+  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps)],
   jobHandlers: [...domainJobHandlers(deps)],
 });
 
@@ -33,6 +34,7 @@ const loops = [
       { name: "domains.schedule-checks", intervalMs: 30_000, run: () => scheduleDomainChecks(deps) },
       { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
       { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db) },
+      ...catalogScheduledTasks(deps),
     ],
     control,
   ),

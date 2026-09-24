@@ -457,6 +457,16 @@ export function definitionJsonSchema(def: SectionDefinition) {
     blocks: Object.fromEntries(
       Object.entries(def.blocks ?? {}).map(([k, v]) => [k, z.toJSONSchema(v, { io: "input", unrepresentable: "any" })]),
     ) as Record<string, unknown>,
-    defaults: def.props.parse({}) as Record<string, unknown>,
+    defaults: propDefaults(def.props),
   };
+}
+
+/** Default value of every prop that has one (required props without defaults are omitted). */
+export function propDefaults(schema: z.ZodObject): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    const r = (field as z.ZodType).safeParse(undefined);
+    if (r.success && r.data !== undefined) out[key] = r.data;
+  }
+  return out;
 }

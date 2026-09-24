@@ -2,6 +2,9 @@ import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { createStore, createStoreSchema, listStores, updateStoreSettings, updateStoreSettingsSchema } from "@altyapi/tenancy";
 import { bootstrapStorefront } from "@altyapi/theme-engine";
+import { ensureDefaultTaxClass } from "@altyapi/catalog";
+import { ensureDefaultLocation } from "@altyapi/inventory";
+import { ensureBasePriceList } from "@altyapi/pricing";
 import type { AppDeps } from "../deps";
 import { orgContext, storeContext } from "../plugins/auth";
 
@@ -40,7 +43,15 @@ export const storeRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async (app,
         ctx,
         req.body,
         { rootDomain: deps.env.STORE_ROOT_DOMAIN },
-        { onCreated: (tx, store) => bootstrapStorefront(tx, store) },
+        {
+          onCreated: async (tx, store) => {
+            const scope = { organizationId: store.organizationId, storeId: store.storeId };
+            await ensureDefaultLocation(tx, scope);
+            await ensureBasePriceList(tx, scope, req.body.defaultCurrency);
+            await ensureDefaultTaxClass(tx, scope, req.body.countryCode);
+            await bootstrapStorefront(tx, store);
+          },
+        },
       );
       return reply.status(201).send(store);
     },

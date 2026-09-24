@@ -8,6 +8,7 @@ import {
   inArray,
   navigations,
   notInArray,
+  pgTimestamp,
   pages,
   pageVersions,
   publications,
@@ -25,6 +26,7 @@ import {
   type PageContent,
   type SeoFields,
   type Transaction,
+  upsertRedirect,
 } from "@altyapi/database";
 import { recordAudit } from "@altyapi/audit";
 import { appendEvent } from "@altyapi/events";
@@ -286,16 +288,6 @@ async function switchPointer(tx: Transaction, scope: Scope, publicationId: strin
     .update(stores)
     .set({ contentVersion: sql`${stores.contentVersion} + 1` })
     .where(eq(stores.id, scope.storeId));
-}
-
-async function upsertRedirect(tx: Transaction, scope: Scope, fromPath: string, toPath: string, statusCode: 301 | 302, source: string) {
-  // Avoid chains/loops: anything pointing at fromPath now points at toPath, and a redirect away from toPath is dropped.
-  await tx.update(redirects).set({ toPath }).where(and(eq(redirects.storeId, scope.storeId), eq(redirects.toPath, fromPath)));
-  await tx.delete(redirects).where(and(eq(redirects.storeId, scope.storeId), eq(redirects.fromPath, toPath)));
-  await tx
-    .insert(redirects)
-    .values({ id: newId(), organizationId: scope.organizationId, storeId: scope.storeId, fromPath, toPath, statusCode, source })
-    .onConflictDoUpdate({ target: [redirects.storeId, redirects.fromPath], set: { toPath, statusCode, source, updatedAt: new Date() } });
 }
 
 // ---------------------------------------------------------------------------
@@ -788,8 +780,8 @@ export async function runScheduledPublishing(db: Database): Promise<number> {
       .select({ id: pages.id, organizationId: pages.organizationId, storeId: pages.storeId, status: pages.status, publishAt: pages.publishAt, unpublishAt: pages.unpublishAt })
       .from(pages)
       .where(
-        sql`(${pages.status} = 'scheduled' and ${pages.publishAt} <= ${now})
-          or (${pages.status} = 'published' and ${pages.unpublishAt} <= ${now})`,
+        sql`(${pages.status} = 'scheduled' and ${pages.publishAt} <= ${pgTimestamp(now)})
+          or (${pages.status} = 'published' and ${pages.unpublishAt} <= ${pgTimestamp(now)})`,
       )
       .limit(100),
   );

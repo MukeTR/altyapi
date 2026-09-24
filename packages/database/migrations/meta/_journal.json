@@ -36,6 +36,20 @@
       "when": 1790247113381,
       "tag": "0004_storefront",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790247671868,
+      "tag": "0005_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790247757363,
+      "tag": "0006_inventory_pricing_customers",
+      "breakpoints": true
     }
   ]
 }

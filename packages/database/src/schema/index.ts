@@ -5,3 +5,7 @@ export * from "./audit";
 export * from "./events";
 export * from "./storage";
 export * from "./storefront";
+export * from "./catalog";
+export * from "./customers";
+export * from "./inventory";
+export * from "./pricing";

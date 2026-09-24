@@ -25,6 +25,7 @@ import { createDomainDeps } from "@altyapi/domains";
 import { createR2Storage } from "@altyapi/storage";
 import { assetRoutes } from "./modules/assets";
 import { storefrontRoutes } from "./modules/storefront";
+import { catalogRoutes } from "./modules/catalog";
 
 /** bigint (money minor units) is serialized as a decimal string on the wire. */
 const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
@@ -41,7 +42,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.removeContentTypeParser("application/json");
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
     const text = typeof body === "string" ? body : body.toString("utf8");
-    if (text.trim() === "") return done(null, undefined);
+    if (text.trim() === "") return done(null, {});
     try {
       done(null, JSON.parse(text));
     } catch {
@@ -53,6 +54,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(createSerializerCompiler({ replacer: bigintReplacer }));
+  // Routes without a response schema use this serializer; bigint must never break a response.
+  app.setReplySerializer((payload) => JSON.stringify(payload, bigintReplacer));
 
   await app.register(contextPlugin);
   await app.register(errorsPlugin);
@@ -101,6 +104,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(domainRoutes, { deps, domainDeps });
   await app.register(assetRoutes, { deps, r2: createR2Storage(deps.env) });
   await app.register(storefrontRoutes, { deps });
+  await app.register(catalogRoutes, { deps });
 
   return app as unknown as FastifyInstance;
 }

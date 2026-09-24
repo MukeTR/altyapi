@@ -22,6 +22,9 @@ packages/
   domains/        Custom domain yaşam döngüsü, Cloudflare for SaaS, edge routing
   storage/        R2 depolama, presigned upload, asset işleme, görsel preset'leri
   theme-engine/   Section registry, tema token'ları, sayfalar, Draft → Preview → Publish, rollback
+  catalog/        Ürün, varyant, seçenek, medya, koleksiyon (manuel/otomatik), kategori, vergi sınıfı, arama
+  inventory/      Stok ledger'ı, lokasyonlar, rezervasyon, transfer
+  pricing/        Fiyat listeleri, deterministik fiyat çözümleyici, maliyet geçmişi
 ```
 
 Diğer uygulama ve paketler (admin, storefront, worker, edge-router, catalog, payments, …)
@@ -102,3 +105,17 @@ Cloudflare Image Transformations ile üretilir (`thumbnail`, `card`, `product`, 
 - Landing page'ler zamanlanabilir (`publishAt` / `unpublishAt`); worker bunları yayınlar ya da kaldırır.
 - Önizleme: `POST …/storefront/preview-token`, 1 saat geçerli imzalı token.
 - Tema ayarları (`PUT …/storefront/theme`) tam doküman olarak gönderilir; eksik alanlar varsayılana döner.
+
+### Katalog, stok ve fiyat
+
+- Ürün tek bir aggregate olarak kaydedilir: çeviriler (locale bazlı handle), seçenekler, varyantlar,
+  medya, etiketler, koleksiyonlar ve kanal görünürlüğü. Yayınlanmış ürünün handle'ı değişince 301 oluşur.
+- Otomatik koleksiyon kuralları SQL'e çevrilir; worker ürün, fiyat ve stok olaylarında üyeliği günceller.
+- Arama PostgreSQL `tsvector` ile yapılır; Türkçe karakterler normalize edilir, SKU/barkod ayrıca indekslenir.
+- Stok ledger'a yazılır (`initial_stock`, `manual_adjustment`, `order_reserved`, `reservation_released`,
+  `order_confirmed`, `return_received`, `transfer_in`, `transfer_out`); `inventory_levels` ledger'ın
+  aynı transaction'da güncellenen projeksiyonudur. `available = on_hand - reserved`.
+- Rezervasyonlarda satırlar sabit sırayla kilitlenir; süresi dolan rezervasyonları worker serbest bırakır.
+- Fiyatlar tamsayı minor unit ve ISO para birimiyle `money_amounts` tablosunda tutulur. Uygulanabilir
+  listeler `priority → tür → id` sırasıyla seçilir (kanal, müşteri grubu ve zaman penceresi kısıtları).
+  Kampanya indirimleri fiyat çözümleyicide değil, sepet üzerinde kampanya motorunda uygulanır.
