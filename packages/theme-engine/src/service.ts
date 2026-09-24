@@ -12,6 +12,7 @@ import {
   pages,
   pageVersions,
   publications,
+  recordTombstone,
   redirects,
   slugHistory,
   sql,
@@ -37,7 +38,7 @@ import type { PageTypeName } from "./sections/definitions";
 import { themeSettingsSchema } from "./theme-settings";
 import { collectAssetIds, pageContentInputSchema, validatePageContent } from "./validation";
 import { LOCALES } from "./sections/primitives";
-import { ensureBaseline, navigationSnapshot, nextRevisionNumber, pageSnapshot, recordRevision, themeSnapshot } from "./history";
+import { ensureBaseline, navigationSnapshot, nextRevisionNumber, pageSnapshot, recordRevision, themeSnapshot, type RevisionMeta } from "./history";
 
 type Scope = { organizationId: string; storeId: string };
 const scopeOf = (ctx: StoreContext): Scope => ({ organizationId: ctx.organizationId, storeId: ctx.storeId });
@@ -441,7 +442,12 @@ async function assertHandleFree(tx: Transaction, storeId: string, handle: string
   if (clash && clash.id !== exceptId) throw conflict("errors.page.handle_taken", { handle });
 }
 
-export async function createPage(db: Database, ctx: StoreContext, input: z.infer<typeof createPageSchema>): Promise<PageRow> {
+export async function createPage(
+  db: Database,
+  ctx: StoreContext,
+  input: z.infer<typeof createPageSchema>,
+  opts: { revision?: RevisionMeta } = {},
+): Promise<PageRow> {
   assertCan(ctx, "content:write");
   const handle = input.handle ?? slugify(Object.values(input.title).find(Boolean) ?? "sayfa");
   let content: PageContent = { sections: [] };
@@ -470,14 +476,21 @@ export async function createPage(db: Database, ctx: StoreContext, input: z.infer
       ...collectAssetIds(content),
       ...(input.seo?.imageAssetId ? [input.seo.imageAssetId] : []),
     ]);
-    await recordRevision(tx, scopeOf(ctx), { type: "page", id: row!.id, revision: row!.draftRevision, parent: null, snapshot: pageSnapshot(row!) });
+    await recordRevision(tx, scopeOf(ctx), {
+      type: "page",
+      id: row!.id,
+      revision: row!.draftRevision,
+      parent: null,
+      snapshot: pageSnapshot(row!),
+      ...(opts.revision ? { meta: opts.revision } : {}),
+    });
     await recordAudit(tx, {
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       action: "page.created",
       resourceType: "page",
       resourceId: row!.id,
-      after: { type: row!.type, handle },
+      after: { type: row!.type, handle, ...(opts.revision?.source ? { source: opts.revision.source } : {}) },
     });
     return row!;
   });
@@ -531,6 +544,8 @@ export async function deletePage(db: Database, ctx: StoreContext, pageId: string
   await withTenantTx(db, scopeOf(ctx), async (tx) => {
     await setAssetReferences(tx, scopeOf(ctx), { type: "page", id: pageId }, []);
     await tx.delete(pages).where(eq(pages.id, pageId));
+    // Incremental ekosistem content consumers learn about the deletion from the tombstone.
+    await recordTombstone(tx, { ...scopeOf(ctx), resource: "content", ref: pageId });
     await recordAudit(tx, {
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,

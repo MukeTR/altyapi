@@ -18,6 +18,7 @@
     "@altyapi/config": "workspace:*",
     "@altyapi/database": "workspace:*",
     "@altyapi/domains": "workspace:*",
+    "@altyapi/ekosistem": "workspace:*",
     "@altyapi/events": "workspace:*",
     "@altyapi/integrations": "workspace:*",
     "@altyapi/inventory": "workspace:*",

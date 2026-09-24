@@ -194,20 +194,63 @@ export async function deletePriceList(db: Database, ctx: StoreContext, priceList
     const list = await tx.query.priceLists.findFirst({ where: and(eq(priceLists.id, priceListId), eq(priceLists.storeId, ctx.storeId)) });
     if (!list) throw notFound("price_list", priceListId);
     if (list.kind === "base") throw conflict("errors.pricing.base_list_permanent");
+    // The served price of every variant in the list falls back to another list. Its prices go
+    // with the list (cascade), so the variants' updated_at moves instead: incremental readers
+    // (ekosistem catalog export) see the change, and product.updated announces it like any
+    // other price change (collection rules, feeds, ekosistem pushes).
+    const touched = await tx.execute<{ product_id: string }>(sql`
+      update product_variants v set updated_at = now()
+        from (select distinct ma.variant_id from money_amounts ma where ma.price_list_id = ${priceListId}) m
+       where v.id = m.variant_id and v.store_id = ${ctx.storeId}
+      returning v.product_id`);
     await tx.delete(priceLists).where(eq(priceLists.id, priceListId));
+    const productIds = new Set([...touched].map((r) => r.product_id));
+    for (const productId of productIds) {
+      await appendEvent(tx, {
+        type: "product.updated",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        aggregateType: "product",
+        aggregateId: productId,
+        payload: { productId, fields: ["prices"] },
+      });
+    }
+    if (productIds.size) await tx.execute(sql`update stores set content_version = content_version + 1 where id = ${ctx.storeId}`);
     await recordAudit(tx, { action: "price_list.deleted", resourceType: "price_list", resourceId: priceListId, before: { name: list.name } });
   });
 }
 
-export const setCostSchema = z.object({ currency: currencySchema, amount: minor, source: z.string().max(40).default("manual") });
+export const setCostSchema = z.object({
+  currency: currencySchema,
+  amount: minor,
+  source: z.string().max(40).default("manual"),
+  /** null = unknown; omitted = keep the tax treatment of the previous cost. */
+  taxIncluded: z.boolean().nullable().optional(),
+  taxRateBps: z.number().int().min(0).max(10_000).nullable().optional(),
+});
 
-export async function setVariantCost(tx: Transaction, scope: Scope, variantId: string, input: { currency: string; amount: bigint; source?: string }) {
+export interface SetVariantCostInput {
+  currency: string;
+  amount: bigint;
+  source?: string;
+  /** Whether the cost includes VAT; null = unknown, undefined = unchanged from the previous cost. */
+  taxIncluded?: boolean | null;
+  /** VAT rate of the cost in basis points; null = unknown, undefined = unchanged. */
+  taxRateBps?: number | null;
+}
+
+export async function setVariantCost(tx: Transaction, scope: Scope, variantId: string, input: SetVariantCostInput) {
   const latest = await tx.query.variantCosts.findFirst({
     where: and(eq(variantCosts.variantId, variantId), eq(variantCosts.currency, input.currency)),
     orderBy: desc(variantCosts.effectiveFrom),
   });
-  if (latest && latest.amount === input.amount) return;
-  await tx.insert(variantCosts).values({ id: newId(), ...scope, variantId, currency: input.currency, amount: input.amount, source: input.source ?? "manual" });
+  // Tax treatment rarely changes with the amount, so it carries over unless the caller states it.
+  const taxIncluded = input.taxIncluded !== undefined ? input.taxIncluded : (latest?.taxIncluded ?? null);
+  const taxRateBps = input.taxRateBps !== undefined ? input.taxRateBps : (latest?.taxRateBps ?? null);
+  if (latest && latest.amount === input.amount && latest.taxIncluded === taxIncluded && latest.taxRateBps === taxRateBps) return;
+  await tx
+    .insert(variantCosts)
+    .values({ id: newId(), ...scope, variantId, currency: input.currency, amount: input.amount, taxIncluded, taxRateBps, source: input.source ?? "manual" });
 }
 
 export async function latestCosts(tx: Transaction, storeId: string, variantIds: string[], currency: string): Promise<Map<string, bigint>> {

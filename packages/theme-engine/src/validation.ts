@@ -12,6 +12,11 @@ export const MAX_SECTIONS_PER_PAGE = 60;
  */
 const CODE_PATTERN = /<\s*\/?\s*(script|iframe|object|embed|link|meta|style|base|form)\b|javascript\s*:|vbscript\s*:|data\s*:\s*text\/html|<[^>]*\son[a-z]+\s*=/i;
 
+/** True when a text would be rejected by the code guard (for callers that build content from external text). */
+export function containsCode(value: string): boolean {
+  return CODE_PATTERN.test(value);
+}
+
 function findCode(value: unknown, path: string, out: ContentIssue[]) {
   if (typeof value === "string") {
     if (CODE_PATTERN.test(value)) out.push({ path, message: "errors.section.code_not_allowed" });

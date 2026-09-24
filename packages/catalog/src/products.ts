@@ -25,6 +25,7 @@ import {
   productTags,
   productTranslations,
   productVariants,
+  recordTombstone,
   slugHistory,
   sql,
   tags,
@@ -575,12 +576,18 @@ export async function deleteProduct(db: Database, ctx: StoreContext, productId: 
     const p = await tx.query.products.findFirst({ where: and(eq(products.id, productId), eq(products.storeId, ctx.storeId)) });
     if (!p) throw notFound("product", productId);
     let outcome: "deleted" | "archived";
+    const event = { organizationId: ctx.organizationId, storeId: ctx.storeId, aggregateType: "product", aggregateId: productId } as const;
     if (!p.publishedAt) {
       await setAssetReferences(tx, scopeOf(ctx), { type: "product", id: productId }, []);
       await tx.delete(products).where(eq(products.id, productId));
+      // Incremental ekosistem consumers learn about the deletion from the tombstone.
+      await recordTombstone(tx, { ...scopeOf(ctx), resource: "product", ref: productId });
+      await appendEvent(tx, { ...event, type: "product.deleted", payload: { productId } });
       outcome = "deleted";
     } else {
+      // Archived products stay addressable and are reported with status "archived".
       await tx.update(products).set({ status: "archived" }).where(eq(products.id, productId));
+      if (p.status !== "archived") await appendEvent(tx, { ...event, type: "product.updated", payload: { productId, fields: ["status"] } });
       outcome = "archived";
     }
     await bumpContentVersion(tx, ctx.storeId);

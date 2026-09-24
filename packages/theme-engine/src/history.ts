@@ -18,7 +18,8 @@ import { currentContext } from "@altyapi/observability";
 import { assertCan, type StoreContext } from "@altyapi/tenancy";
 
 export type RevisionResource = "theme" | "page" | "navigation";
-export type RevisionSource = "editor" | "ai_action" | "restore" | "bootstrap" | "import" | "navigation_change";
+/** "yanit": a draft created from a Yanıt content opportunity (ekosistem bridge), never published automatically. */
+export type RevisionSource = "editor" | "ai_action" | "restore" | "bootstrap" | "import" | "navigation_change" | "yanit";
 
 type Scope = { organizationId: string; storeId: string };
 

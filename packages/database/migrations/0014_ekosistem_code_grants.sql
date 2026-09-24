@@ -1,0 +1,1 @@
+ALTER TABLE "ekosistem_codes" ADD COLUMN "grants" text[] DEFAULT ARRAY[]::text[] NOT NULL;

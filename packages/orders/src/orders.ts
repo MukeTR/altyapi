@@ -49,7 +49,8 @@ export interface OrderDraftLine {
   compareAtUnitPrice: bigint | null;
   unitCost: bigint | null;
   discountAmount: bigint;
-  taxRateBps: number;
+  /** null when the tax class was not resolved; never replaced by a guessed 0. */
+  taxRateBps: number | null;
   taxAmount: bigint;
   taxIncluded: boolean;
   total: bigint;

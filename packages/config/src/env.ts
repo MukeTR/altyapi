@@ -116,6 +116,24 @@ export const yanitSchema = z.object({
   YANIT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
 });
 
+/**
+ * Ekosistem v1 (docs/ekosistem/v1.md §2): static, per-environment peer base addresses.
+ * Request data never chooses a base. The https / localhost policy depends on APP_ENV and
+ * is enforced by @altyapi/ekosistem at startup and on every call (a refinement here would
+ * break the worker schema's .omit()).
+ */
+export const ekosistemSchema = z.object({
+  /** altyapi's own public base (the part before /ekosistem/v1); defaults to API_URL. */
+  EKOSISTEM_PUBLIC_BASE: z.url().optional(),
+  EKOSISTEM_PEER_BASE_KARMATIK: z.url().optional(),
+  EKOSISTEM_PEER_BASE_YANIT: z.url().optional(),
+  /**
+   * Number of trusted reverse proxies in front of the API (§6.4: the proxy count is set
+   * explicitly). The client IP for the unsigned limits is read this many hops from the socket.
+   */
+  EKOSISTEM_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
+});
+
 export const observabilitySchema = z.object({
   SENTRY_DSN: z.url().optional(),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
@@ -153,6 +171,7 @@ export const apiEnvSchema = runtimeSchema
   .extend(aiSchema.shape)
   .extend(karmatikSchema.shape)
   .extend(yanitSchema.shape)
+  .extend(ekosistemSchema.shape)
   .extend(observabilitySchema.shape)
   .extend({
     API_HOST: z.string().default("0.0.0.0"),

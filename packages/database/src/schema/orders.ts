@@ -110,7 +110,8 @@ export const orderLines = pgTable(
     /** Unit cost snapshot for profit reporting (Kârmatik). */
     unitCost: bigint({ mode: "bigint" }),
     discountAmount: bigint({ mode: "bigint" }).notNull().default(sql`0`),
-    taxRateBps: integer().notNull().default(0),
+    /** VAT rate in basis points; null when no tax class resolved (never stored as a guessed 0). */
+    taxRateBps: integer(),
     taxAmount: bigint({ mode: "bigint" }).notNull().default(sql`0`),
     taxIncluded: boolean().notNull().default(true),
     total: bigint({ mode: "bigint" }).notNull(),

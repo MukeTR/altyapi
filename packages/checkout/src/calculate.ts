@@ -46,7 +46,8 @@ export interface CalculatedLine {
   subtotal: bigint;
   discount: bigint;
   total: bigint;
-  taxRateBps: number;
+  /** null when no tax class resolved: the rate is unknown, not 0% (ekosistem §6.1). */
+  taxRateBps: number | null;
   taxAmount: bigint;
   taxIncluded: boolean;
   requiresShipping: boolean;
@@ -63,7 +64,7 @@ export interface CartCalculation {
   discounts: DiscountResult["discounts"];
   appliedCodes: string[];
   rejectedCodes: DiscountResult["rejectedCodes"];
-  shipping: { rateId: string; name: string; carrierCode: string | null; amount: bigint; discount: bigint; taxAmount: bigint; taxRateBps: number } | null;
+  shipping: { rateId: string; name: string; carrierCode: string | null; amount: bigint; discount: bigint; taxAmount: bigint; taxRateBps: number | null } | null;
   requiresShipping: boolean;
   shippingAddress: PostalAddress | null;
   billingAddress: PostalAddress | null;
@@ -160,7 +161,7 @@ export async function calculateCart(tx: Transaction, cart: CartRow, engine: Disc
       subtotal: unitPrice * BigInt(l.quantity),
       discount: 0n,
       total: unitPrice * BigInt(l.quantity),
-      taxRateBps: tax?.rateBps ?? 0,
+      taxRateBps: tax ? tax.rateBps : null,
       taxAmount: 0n,
       taxIncluded: tax?.pricesIncludeTax ?? true,
       requiresShipping: v?.requiresShipping ?? true,
@@ -188,7 +189,7 @@ export async function calculateCart(tx: Transaction, cart: CartRow, engine: Disc
       cartIssues.push("shipping_method_unavailable");
     } else {
       const tax = taxRows.find((t) => t.id === rate!.taxClassId) ?? defaultTax;
-      shipping = { rateId: rate!.id, name: priced.name, carrierCode: rate!.carrierCode, amount: priced.amount, discount: 0n, taxAmount: 0n, taxRateBps: tax?.rateBps ?? 0 };
+      shipping = { rateId: rate!.id, name: priced.name, carrierCode: rate!.carrierCode, amount: priced.amount, discount: 0n, taxAmount: 0n, taxRateBps: tax ? tax.rateBps : null };
     }
   }
 
@@ -228,11 +229,13 @@ export async function calculateCart(tx: Transaction, cart: CartRow, engine: Disc
   for (const l of calc) {
     if (l.discount > l.subtotal) l.discount = l.subtotal;
     l.total = l.subtotal - l.discount;
-    l.taxAmount = l.taxIncluded ? includedTax(l.total, l.taxRateBps) : percentageOf(money(l.total, cart.currency), l.taxRateBps).amount;
+    // An unresolved rate computes no tax (as before); the line keeps taxRateBps null.
+    const rate = l.taxRateBps ?? 0;
+    l.taxAmount = l.taxIncluded ? includedTax(l.total, rate) : percentageOf(money(l.total, cart.currency), rate).amount;
   }
   if (shipping) {
     if (shipping.discount > shipping.amount) shipping.discount = shipping.amount;
-    shipping.taxAmount = includedTax(shipping.amount - shipping.discount, shipping.taxRateBps);
+    shipping.taxAmount = includedTax(shipping.amount - shipping.discount, shipping.taxRateBps ?? 0);
   }
 
   const sellable = calc.filter((l) => l.available);

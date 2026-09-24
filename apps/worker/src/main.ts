@@ -9,6 +9,7 @@ import { catalogEventHandlers, catalogJobHandlers, catalogScheduledTasks } from 
 import { orderScheduledTasks } from "./handlers/orders";
 import { marketingEventHandlers } from "./handlers/marketing";
 import { integrationJobHandlers, integrationScheduledTasks } from "./handlers/integrations";
+import { ekosistemEventHandlers, ekosistemJobHandlers, ekosistemScheduledTasks } from "./handlers/ekosistem";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
@@ -21,8 +22,8 @@ const runtime = new ConsumerRuntime({
   queue: deps.queue,
   logger: deps.logger,
   maxAttempts: deps.env.QUEUE_MAX_ATTEMPTS,
-  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps, r2), ...marketingEventHandlers(deps)],
-  jobHandlers: [...domainJobHandlers(deps), ...catalogJobHandlers(deps, r2), ...integrationJobHandlers(deps)],
+  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps, r2), ...marketingEventHandlers(deps), ...ekosistemEventHandlers(deps)],
+  jobHandlers: [...domainJobHandlers(deps), ...catalogJobHandlers(deps, r2), ...integrationJobHandlers(deps), ...ekosistemJobHandlers(deps)],
 });
 
 await syncBuiltinSectionDefinitions(deps.db);
@@ -41,6 +42,7 @@ const loops = [
       ...catalogScheduledTasks(deps),
       ...orderScheduledTasks(deps),
       ...integrationScheduledTasks(deps),
+      ...ekosistemScheduledTasks(deps),
     ],
     control,
   ),

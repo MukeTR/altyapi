@@ -33,6 +33,8 @@ packages/
   payment-iyzico/ iyzico Checkout Form adaptörü
   orders/         Sipariş, durum makinesi, fulfillment, kargo adaptör sözleşmesi, iade, refund
   checkout/       Sepet, kargo, vergi, checkout orkestrasyonu, ödeme bildirimleri
+  integrations/   Entegratör, pazaryeri ve besleme bağlantıları, veri sahipliği
+  ekosistem/      Kârmatik ve Yanıt ile imzalı köprü (docs/ekosistem/v1.md)
 ```
 
 Diğer uygulama ve paketler (admin, storefront, worker, edge-router, catalog, payments, …)
@@ -260,3 +262,65 @@ bağlantılar periyodik sorgu (polling) ile çalışır; API'nin izin verdiği y
 - **Çalışma**: worker her 15 sn'de vadesi gelen bağlantıları kiralar (SKIP LOCKED) ve `integration.sync` işi
   kuyruğa atar; sayfa bütçesi dolarsa imleçten devam eder; Redis tabanlı bağlantı başına hız sınırı uygulanır.
 - İzin: `integrations:read` / `integrations:manage`; stok/fiyat yazımı ayrıca `inventory:write` / `pricing:write`.
+
+### Ekosistem köprüsü (Kârmatik ve Yanıt)
+
+Sözleşme: [`docs/ekosistem/v1.md`](./docs/ekosistem/v1.md). Veritabanı paylaşılmaz; her ürün veriyi karşı tarafın
+imzalı `/ekosistem/v1` uçlarından çeker, değişiklikleri hızlı fark etmek için dürtme (push) alır. Kod `packages/ekosistem`
+altındadır; API `apps/api/src/modules/ekosistem*.ts`, worker `apps/worker/src/handlers/ekosistem.ts`.
+
+- **İmza ve açılış denetimi**: HMAC-SHA256 (§5); API ve worker açılışta sözleşmenin test vektörlerini (V1–V5, para
+  vektörleri) çalıştırır, tutmazsa süreç başlamaz. Eş adresleri yalnız ortam haritasından okunur (https; `http` ve
+  localhost yalnız `APP_ENV=local`). Yönlendirme izlenmez, 10 sn zaman aşımı (`profit/quote` 1,5 sn), yanıt ≤ 5 MB,
+  bağlantı başına devre kesici (art arda 5 hata → 60 sn).
+- **Bağlantı** (§4): mağaza kod üretir (`POST …/ekosistem/codes`) ya da eşin kodunu girer (`POST …/ekosistem/links/accept`,
+  ardından `…/links/:id/confirm`); kodu üreten taraf eş kanıtından sonra `…/links/:id/approve` ile onaylar. Kaldırma
+  (`DELETE …/links/:id`) yerelde hemen geçerlidir, eşe `DELETE` 72 saat üstel geri çekilmeyle iletilir. Gizli anahtar
+  `packages/secrets` zarf şifrelemesiyle saklanır, API'den dönmez. İzin: `karmatik:manage` / `yanit:manage`.
+  `grants` verilmezse §3 varsayılanları `costs:read` ve `orders:read` olmadan verilir; bu ikisi yalnız istekte tek tek
+  listelenirse verilir. Anahtar yenilemeyi (`POST /links/:id/rotate`) yalnız mevcut anahtarla imzalı istek başlatır;
+  24 saat geçerli eski anahtar yalnız aynı nonce'lu tekrar denemede kabul edilir.
+- **Sunulan uçlar** (§7): `brand`, `catalog/products`, `orders`, `content` (+ `links/*`, `events`); kapsam denetimli,
+  ham gövde imzalı, bağlantı başına hız sınırı. Marka profili: `GET/PUT …/ekosistem/brand-profile`.
+- **Tüketim** (§7.5): worker her dakika vadesi gelen etkin bağlantıları kiralar (SKIP LOCKED) ve `ekosistem.pull-link`
+  işi kuyruğa atar. Her kaynak eşin verdiği kapsam varken ve en fazla saatte bir (ya da `Cache-Control: max-age`)
+  çekilir: Kârmatik `profit/variants`, `pricing/suggestions`, `competitors/prices`, `alerts`; Yanıt
+  `visibility/summary` (7 ve 30 gün), `visibility/gaps`, `opportunities`, `citations`. Artımlı uçlar `since = asOf − 10 dk`
+  ve imleçle, her sayfa imleciyle birlikte kaydedilerek çekilir; mezar taşları siler; anlık görüntü uçları saklanan
+  kümeyi değiştirir. Eş kalemleri yerel varyantlara `sourceRef → barkod → SKU` sırasıyla eşlenir (belirsiz eşleşme
+  boş kalır). `409 link_pending` 10 dk sonra, geçici hatalar 5 dk sonra yeniden denenir; en az 10'ar dk arayla 3
+  `link_invalid` bağlantıyı `revoked_by_peer` yapar. Kârmatik dürtmeleri (`karmatik.profit.updated`,
+  `karmatik.suggestion.created`) ilgili kaynağı 30 sn birleştirilerek hemen çektirir.
+- **İç olaylar**: bir kârlılık satırı yeni zarar ederse ya da güvenli indirimi 0'a inerse `profit.margin_breached`;
+  Yanıt görünürlüğü önceki anlık görüntüye göre ≥ 1500 bps değişirse `geo.visibility_changed` (outbox).
+- **Giden dürtmeler** (§10): ürün, sipariş (yalnız sunulan vitrin siparişleri), iade, sayfa/tema yayını ve marka
+  profili değişiklikleri, ilgili okuma kapsamı olan her etkin bağlantı için `ekosistem_deliveries` satırı açar;
+  aynı (tür, ref) 30 sn birleştirilir, imzalı ve nonce'lu gönderilir, en fazla 5 deneme (≤ 1 saat geri çekilme),
+  bağlantı başına 120/dk. Devre kesici açıkken deneme harcanmaz.
+- **Kârmatik ekranları** (`karmatik:read`): `GET …/ekosistem/karmatik/overview` (sayımlar, zarar eden ve ince marjlı
+  varyantlar, açık uyarılar, tazelik, devre kesici durumu, kâr koruması politikası), `…/karmatik/variants`,
+  `…/karmatik/suggestions`, `…/karmatik/alerts`, `…/karmatik/competitors`.
+- **Fiyat önerisi kararı**: `POST …/karmatik/suggestions/:ref/apply` (yalnız bağlı web mağazasının `channel=web`
+  önerileri; ek olarak `pricing:write`) fiyatı veri sahipliğine uyan fiyat yazımıyla uygular (sahip başka bir sistemse
+  hiçbir şey yazılmaz ve öneri döner), ardından Kârmatik'e idempotent `decision` gönderir; `…/dismiss` reddeder.
+  Politika `block` iken uygulanacak fiyat sunucuda da kâr korumasından geçer: taban altı fiyat `campaigns:approve` ve
+  `justification` ister, kontrol yapılamazsa `confirmUnchecked: true` gerekir.
+  Gönderilemeyen kararlar worker tarafından geri çekilmeyle yeniden denenir.
+- **Kâr koruması** (`POST …/karmatik/profit-check`, yönetici eylemi yardımcısı): önerilen indirimli birim fiyatlar
+  önce saklanan taban fiyatla, yoksa `profit:quote` ile (1500 ms) karşılaştırılır. Mağaza politikası
+  `GET/PUT …/ekosistem/settings` → `profitGuard: block | warn | ignore` (varsayılan `warn`, `stores.settings.ekosistem`).
+  `block` kaydı reddettirir (`campaigns:approve` yetkili kullanıcı gerekçe yazarak geçer, denetim kaydı düşer);
+  kontrol yapılamazsa `block` bile yalnız uyarır ve onay ister. Müşteri akışlarında asla çağrılmaz. Teklif isteği
+  maliyeti yalnız mağaza Kârmatik'e `costs:read`, SKU/barkodu yalnız `catalog:read` verdiyse taşır.
+- **Yanıt ekranları** (`yanit:read`): `…/yanit/overview` (7/30 günlük özetler ve değişimler), `…/yanit/gaps`,
+  `…/yanit/opportunities`, `…/yanit/citations`. `POST …/yanit/opportunities/:ref/draft` (`content:write`) fırsattan
+  tema motoru üzerinden SSS / zengin metin bölümlü **taslak** sayfa oluşturur (kod koruması dahil, revizyon kaynağı
+  `yanit`); asla yayınlanmaz. `…/dismiss` fırsatı yerelde kapatır.
+- **Veri silme** (§4.4): kaldırmada Kârmatik kârlılık ve uyarı verisi hemen silinir; diğer okuma modelleri en geç
+  30 gün içinde silinir. Eş bir kapsamı geri alırsa o kapsamla çekilen veri silinir.
+- **Eksikler**: bağlantı oluşturma/kaldırma/kapsam değişikliği `ekosistem.link_changed` outbox olayı ve denetim kaydı
+  olarak yazılır, ancak depoda e-posta gönderici olmadığından sahibe e-posta (§4.1) henüz gitmez. Genel fiyat ve
+  kampanya kayıt uçları kâr korumasını sunucuda uygulamaz (yalnız öneri uygulama ve `profit-check` yardımcısı).
+  Vitrin, Yanıt sensörüyle `PRODUCT_VIEW` (§9.5) göndermez: sensörün site anahtarı v1 bağlantısında taşınmaz.
+- **Env**: `EKOSISTEM_PUBLIC_BASE` (varsayılan `API_URL`), `EKOSISTEM_PEER_BASE_KARMATIK`, `EKOSISTEM_PEER_BASE_YANIT`,
+  `EKOSISTEM_TRUSTED_PROXY_HOPS` (varsayılan 1).

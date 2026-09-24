@@ -33,6 +33,8 @@ import { paymentCallbackRoutes } from "./modules/payment-callbacks";
 import { orderRoutes } from "./modules/orders";
 import { trackingRoutes } from "./modules/tracking";
 import { integrationRoutes } from "./modules/integrations";
+import { ekosistemRoutes } from "./modules/ekosistem";
+import { ekosistemPublicRoutes } from "./modules/ekosistem-public";
 
 /** bigint (money minor units) is serialized as a decimal string on the wire. */
 const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
@@ -118,6 +120,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(orderRoutes, { deps });
   await app.register(trackingRoutes, { deps });
   await app.register(integrationRoutes, { deps });
+  await app.register(ekosistemRoutes, { deps });
+  // Encapsulated: raw-body parsing, §6.4 error envelope and per-link limits only apply under /ekosistem/v1.
+  await app.register(ekosistemPublicRoutes, { deps });
   // Encapsulated: custom body parsing (raw body + form) only applies to provider callbacks.
   await app.register(paymentCallbackRoutes, { deps });
 

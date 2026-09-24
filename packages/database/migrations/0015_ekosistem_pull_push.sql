@@ -1,0 +1,5 @@
+ALTER TABLE "ekosistem_deliveries" ADD COLUMN "leased_until" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "ekosistem_links" ADD COLUMN "next_pull_at" timestamp with time zone;--> statement-breakpoint
+CREATE UNIQUE INDEX "ekosistem_deliveries_coalesce_uq" ON "ekosistem_deliveries" USING btree ("link_id","type","ref") WHERE "ekosistem_deliveries"."status" = 'pending' and "ekosistem_deliveries"."attempts" = 0 and "ekosistem_deliveries"."leased_until" is null;--> statement-breakpoint
+CREATE INDEX "ekosistem_deliveries_finished_idx" ON "ekosistem_deliveries" USING btree ("updated_at") WHERE "ekosistem_deliveries"."status" <> 'pending';--> statement-breakpoint
+CREATE INDEX "ekosistem_links_due_idx" ON "ekosistem_links" USING btree ("next_pull_at") WHERE "ekosistem_links"."status" = 'active';

@@ -16,6 +16,7 @@ import {
   pgTimestamp,
   productCollections,
   products,
+  recordTombstone,
   sql,
   taxClasses,
   upsertRedirect,
@@ -328,6 +329,8 @@ export async function deleteCollection(db: Database, ctx: StoreContext, collecti
     const deleted = await tx.delete(collections).where(and(eq(collections.id, collectionId), eq(collections.storeId, ctx.storeId))).returning();
     if (!deleted.length) throw notFound("collection", collectionId);
     await setAssetReferences(tx, scopeOf(ctx), { type: "collection", id: collectionId }, []);
+    // Incremental ekosistem content consumers learn about the deletion from the tombstone.
+    await recordTombstone(tx, { ...scopeOf(ctx), resource: "content", ref: collectionId });
     await recordAudit(tx, { action: "collection.deleted", resourceType: "collection", resourceId: collectionId });
   });
 }

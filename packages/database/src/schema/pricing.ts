@@ -117,6 +117,10 @@ export const variantCosts = pgTable(
       .references(() => productVariants.id, { onDelete: "cascade" }),
     currency: char({ length: 3 }).notNull(),
     amount: bigint({ mode: "bigint" }).notNull(),
+    /** Whether the amount includes VAT; null = unknown (consumers assume net, estimated). */
+    taxIncluded: boolean(),
+    /** VAT rate of the cost in basis points; null = unknown, never written as 0 by default. */
+    taxRateBps: integer(),
     effectiveFrom: tstz().notNull().defaultNow(),
     source: text().notNull().default("manual"),
   },

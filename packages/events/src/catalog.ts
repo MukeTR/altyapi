@@ -12,6 +12,8 @@ export interface DomainEventMap {
   "product.created": { productId: string };
   "product.published": { productId: string };
   "product.updated": { productId: string; fields: string[] };
+  /** Hard delete (never-published drafts); an ekosistem tombstone is written in the same transaction. */
+  "product.deleted": { productId: string };
   "inventory.changed": { inventoryItemId: string; locationId: string; variantId: string; available: number };
   "cart.abandoned": { cartId: string; customerId: string | null; email: string | null };
   "checkout.started": { cartId: string; orderId: string };
@@ -28,12 +30,47 @@ export interface DomainEventMap {
   "page.published": { pageId: string; pageVersionId: string };
   "tracking.updated": { version: number };
   "marketing.consent_changed": { customerId: string | null; anonymousId: string | null; categories: Record<string, boolean> };
-  "geo.visibility_changed": { snapshotId: string; score: number; previousScore: number | null };
-  "profit.margin_breached": { productId: string | null; campaignId: string | null; marginBps: number };
+  /**
+   * AI visibility moved noticeably. From the ekosistem bridge: a Yanıt summary whose
+   * visibilityBps differs by at least 1500 bps from the previous stored snapshot (§9.1).
+   */
+  "geo.visibility_changed": {
+    snapshotId: string;
+    score: number;
+    previousScore: number | null;
+    source?: "yanit";
+    windowDays?: number;
+    linkId?: string;
+  };
+  /**
+   * A price or campaign is below the margin floor. From the ekosistem bridge: a Kârmatik
+   * profitability row newly became loss-making, or its safe discount dropped to 0 (§8.2).
+   */
+  "profit.margin_breached": {
+    productId: string | null;
+    campaignId: string | null;
+    marginBps: number;
+    source?: "karmatik";
+    reason?: "loss_making" | "no_safe_discount";
+    variantId?: string | null;
+    channel?: string | null;
+    ref?: string;
+    linkId?: string;
+  };
   "asset.uploaded": { assetId: string };
   "import.requested": { importJobId: string };
   "feed.requested": { feedId: string };
   "ai_action.executed": { actionId: string; actionType: string };
+  /**
+   * Ekosistem link lifecycle (docs/ekosistem/v1.md §4.1): link creation, removal and scope
+   * changes are reported to the store owner. Never carries secrets or codes.
+   */
+  "ekosistem.link_changed": {
+    linkId: string;
+    peerProduct: string;
+    change: "awaiting_approval" | "activated" | "rejected" | "revoked" | "revoked_by_peer" | "peer_grants_changed";
+    grants?: string[];
+  };
 }
 
 export type DomainEventType = keyof DomainEventMap;
