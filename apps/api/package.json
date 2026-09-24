@@ -18,6 +18,7 @@
     "@altyapi/domains": "workspace:*",
     "@altyapi/events": "workspace:*",
     "@altyapi/observability": "workspace:*",
+    "@altyapi/storage": "workspace:*",
     "@altyapi/tenancy": "workspace:*",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",

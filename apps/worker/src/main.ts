@@ -4,16 +4,19 @@ import { ConsumerRuntime } from "@altyapi/events";
 import { createWorkerDeps } from "./deps";
 import { consumeLoop, outboxLoop, schedulerLoop, type LoopControl } from "./loops";
 import { domainEventHandlers, domainJobHandlers, scheduleDomainChecks } from "./handlers/domains";
+import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
+import { createR2Storage } from "@altyapi/storage";
 
 const deps = createWorkerDeps();
 const control: LoopControl = { stopped: false };
+const r2 = createR2Storage(deps.env);
 
 const runtime = new ConsumerRuntime({
   db: deps.db,
   queue: deps.queue,
   logger: deps.logger,
   maxAttempts: deps.env.QUEUE_MAX_ATTEMPTS,
-  eventHandlers: [...domainEventHandlers(deps)],
+  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2)],
   jobHandlers: [...domainJobHandlers(deps)],
 });
 
@@ -21,7 +24,14 @@ const loops = [
   outboxLoop(deps, control),
   consumeLoop(deps, runtime, "events", control, deps.env.WORKER_CONCURRENCY),
   consumeLoop(deps, runtime, "jobs", control, deps.env.WORKER_CONCURRENCY),
-  schedulerLoop(deps, [{ name: "domains.schedule-checks", intervalMs: 30_000, run: () => scheduleDomainChecks(deps) }], control),
+  schedulerLoop(
+    deps,
+    [
+      { name: "domains.schedule-checks", intervalMs: 30_000, run: () => scheduleDomainChecks(deps) },
+      { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
+    ],
+    control,
+  ),
 ];
 
 const health = createServer(async (req, res) => {

@@ -20,6 +20,7 @@ packages/
   events/         Transactional outbox ve event kataloğu
   audit/          Redaksiyonlu audit log yazıcısı
   domains/        Custom domain yaşam döngüsü, Cloudflare for SaaS, edge routing
+  storage/        R2 depolama, presigned upload, asset işleme, görsel preset'leri
 ```
 
 Diğer uygulama ve paketler (admin, storefront, worker, edge-router, catalog, payments, …)
@@ -74,3 +75,14 @@ API: http://localhost:4000 — OpenAPI UI: http://localhost:4000/docs
 - Worker outbox'ı kuyruğa taşır (`QUEUE_DRIVER=postgres` yerel, `sqs` AWS).
 - Consumer'lar `(consumer, message_id)` üzerinden idempotenttir; retry exponential backoff + jitter,
   `QUEUE_MAX_ATTEMPTS` sonrası dead-letter.
+
+### Medya (R2)
+
+1. `POST …/assets/uploads` — tür, boyut, kota ve yetki kontrolü; 10 dk geçerli presigned PUT URL döner.
+2. Tarayıcı dosyayı doğrudan R2'ye yükler (bucket CORS kuralı gerekir, bkz. `infra/terraform`).
+3. `POST …/assets/:id/complete` — nesnenin varlığı, boyutu ve content-type'ı doğrulanır.
+4. Worker SHA-256'yı ve görsel ölçülerini doğrular; asset `ready` olur, uyuşmazlıkta nesne silinir.
+
+Object key: `stores/{store_id}/assets/{asset_id}/{content_hash}.{ext}`. Görsel boyutları
+Cloudflare Image Transformations ile üretilir (`thumbnail`, `card`, `product`, `zoom`, `hero-mobile`,
+`hero-desktop`, `social`). Silme soft-delete'tir; 30 gün sonra referansı olmayan nesneler temizlenir.
