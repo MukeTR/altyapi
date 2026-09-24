@@ -24,6 +24,7 @@ import { domainRoutes } from "./modules/domains";
 import { createDomainDeps } from "@altyapi/domains";
 import { createR2Storage } from "@altyapi/storage";
 import { assetRoutes } from "./modules/assets";
+import { storefrontRoutes } from "./modules/storefront";
 
 /** bigint (money minor units) is serialized as a decimal string on the wire. */
 const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
@@ -35,6 +36,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     trustProxy: true,
     bodyLimit: 2 * 1024 * 1024,
   }).withTypeProvider<ZodTypeProvider>();
+
+  // Bodyless POSTs (publish, retry, rollback…) are accepted even when a JSON content-type is sent.
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
+    const text = typeof body === "string" ? body : body.toString("utf8");
+    if (text.trim() === "") return done(null, undefined);
+    try {
+      done(null, JSON.parse(text));
+    } catch {
+      const err = new Error("Invalid JSON body") as Error & { statusCode: number };
+      err.statusCode = 400;
+      done(err, undefined);
+    }
+  });
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(createSerializerCompiler({ replacer: bigintReplacer }));
@@ -85,6 +100,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const domainDeps = createDomainDeps(deps.env, deps.db);
   await app.register(domainRoutes, { deps, domainDeps });
   await app.register(assetRoutes, { deps, r2: createR2Storage(deps.env) });
+  await app.register(storefrontRoutes, { deps });
 
   return app as unknown as FastifyInstance;
 }

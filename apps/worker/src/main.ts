@@ -6,6 +6,7 @@ import { consumeLoop, outboxLoop, schedulerLoop, type LoopControl } from "./loop
 import { domainEventHandlers, domainJobHandlers, scheduleDomainChecks } from "./handlers/domains";
 import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
 import { createR2Storage } from "@altyapi/storage";
+import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
 const deps = createWorkerDeps();
 const control: LoopControl = { stopped: false };
@@ -20,6 +21,8 @@ const runtime = new ConsumerRuntime({
   jobHandlers: [...domainJobHandlers(deps)],
 });
 
+await syncBuiltinSectionDefinitions(deps.db);
+
 const loops = [
   outboxLoop(deps, control),
   consumeLoop(deps, runtime, "events", control, deps.env.WORKER_CONCURRENCY),
@@ -29,6 +32,7 @@ const loops = [
     [
       { name: "domains.schedule-checks", intervalMs: 30_000, run: () => scheduleDomainChecks(deps) },
       { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
+      { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db) },
     ],
     control,
   ),

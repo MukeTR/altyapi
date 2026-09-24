@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { conflict, currencySchema, invalid, isValidSlug, newId, notFound, slugify } from "@altyapi/commerce-core";
-import { and, channels, eq, inArray, sql, storeDomains, stores, withTenantTx, type Database } from "@altyapi/database";
+import { and, channels, eq, inArray, sql, storeDomains, stores, withTenantTx, type Database, type Transaction } from "@altyapi/database";
 import { recordAudit } from "@altyapi/audit";
 import { appendEvent } from "@altyapi/events";
 import { assertCan, can, type OrganizationContext, type StoreContext, type StoreSnapshot } from "./context";
@@ -64,6 +64,10 @@ export async function createStore(
   ctx: OrganizationContext,
   input: z.infer<typeof createStoreSchema>,
   platform: { rootDomain: string },
+  hooks?: {
+    /** Runs inside the creation transaction (e.g. storefront bootstrap) so a store is never half-created. */
+    onCreated?: (tx: Transaction, store: { organizationId: string; storeId: string; storeName: string; principalId: string | null }) => Promise<void>;
+  },
 ): Promise<StoreSnapshot> {
   assertCan(ctx, "store:manage");
   const slug = input.slug ?? slugify(input.name);
@@ -135,7 +139,14 @@ export async function createStore(
       resourceId: storeId,
       after: { slug, name: input.name, hostname },
     });
-    return toSnapshot(row!);
+    await hooks?.onCreated?.(tx, {
+      organizationId: ctx.organizationId,
+      storeId,
+      storeName: input.name,
+      principalId: ctx.principal.userId,
+    });
+    const [fresh] = await tx.select().from(stores).where(eq(stores.id, storeId));
+    return toSnapshot(fresh ?? row!);
   });
 }
 

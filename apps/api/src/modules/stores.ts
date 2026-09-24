@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { createStore, createStoreSchema, listStores, updateStoreSettings, updateStoreSettingsSchema } from "@altyapi/tenancy";
+import { bootstrapStorefront } from "@altyapi/theme-engine";
 import type { AppDeps } from "../deps";
 import { orgContext, storeContext } from "../plugins/auth";
 
@@ -34,7 +35,13 @@ export const storeRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async (app,
     { schema: { tags: ["stores"], params: orgParams, body: createStoreSchema, response: { 201: storeSchema } } },
     async (req, reply) => {
       const ctx = await orgContext(deps, req);
-      const store = await createStore(deps.db, ctx, req.body, { rootDomain: deps.env.STORE_ROOT_DOMAIN });
+      const store = await createStore(
+        deps.db,
+        ctx,
+        req.body,
+        { rootDomain: deps.env.STORE_ROOT_DOMAIN },
+        { onCreated: (tx, store) => bootstrapStorefront(tx, store) },
+      );
       return reply.status(201).send(store);
     },
   );

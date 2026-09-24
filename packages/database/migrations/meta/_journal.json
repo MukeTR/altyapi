@@ -29,6 +29,13 @@
       "when": 1790246876718,
       "tag": "0003_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790247113381,
+      "tag": "0004_storefront",
+      "breakpoints": true
     }
   ]
 }

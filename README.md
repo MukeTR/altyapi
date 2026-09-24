@@ -21,6 +21,7 @@ packages/
   audit/          Redaksiyonlu audit log yazıcısı
   domains/        Custom domain yaşam döngüsü, Cloudflare for SaaS, edge routing
   storage/        R2 depolama, presigned upload, asset işleme, görsel preset'leri
+  theme-engine/   Section registry, tema token'ları, sayfalar, Draft → Preview → Publish, rollback
 ```
 
 Diğer uygulama ve paketler (admin, storefront, worker, edge-router, catalog, payments, …)
@@ -86,3 +87,18 @@ API: http://localhost:4000 — OpenAPI UI: http://localhost:4000/docs
 Object key: `stores/{store_id}/assets/{asset_id}/{content_hash}.{ext}`. Görsel boyutları
 Cloudflare Image Transformations ile üretilir (`thumbnail`, `card`, `product`, `zoom`, `hero-mobile`,
 `hero-desktop`, `social`). Silme soft-delete'tir; 30 gün sonra referansı olmayan nesneler temizlenir.
+
+### Tema ve sayfa motoru
+
+- Her mağaza için ayrı build yoktur; storefront aktif publication'ı okuyarak render eder.
+- Section tanımları `packages/theme-engine/src/sections/definitions.ts` içindedir (Zod props, blocks,
+  izinli sayfa tipleri, content binding, renderer id). Worker açılışta bunları `section_definitions`
+  tablosuna senkronlar; editör JSON Schema'yı `GET /v1/section-definitions` ile alır.
+- Taslaklar (`themes.draft_*`, `pages.draft_*`) optimistic concurrency ile güncellenir (`expectedRevision`).
+- Publish immutable `theme_versions` / `page_versions` ve yeni bir `publications` kaydı oluşturur;
+  `storefront_state.active_publication_id` aynı transaction içinde değişir ve `stores.content_version` artar.
+- Rollback eski publication'ın sürümlerini kullanan yeni bir publication oluşturur.
+- Sayfa handle'ı değişince eski URL için otomatik 301 ve `slug_history` kaydı oluşur.
+- Landing page'ler zamanlanabilir (`publishAt` / `unpublishAt`); worker bunları yayınlar ya da kaldırır.
+- Önizleme: `POST …/storefront/preview-token`, 1 saat geçerli imzalı token.
+- Tema ayarları (`PUT …/storefront/theme`) tam doküman olarak gönderilir; eksik alanlar varsayılana döner.
