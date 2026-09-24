@@ -189,3 +189,19 @@ Yerel geliştirmede R2 yerine MinIO kullanılabilir: `docker compose up -d minio
   KMS (üretim) veya `LOCAL_MASTER_KEY` (yalnızca geliştirme) ile sarılır. Kart verisi platformda tutulmaz.
 - Kargo: bölge (ülke/il) + ücret tipleri (sabit, ağırlık, sepet tutarı, ücretsiz kargo eşiği). Taşıyıcı
   adaptör sözleşmesi (`createShipment`, `getLabel`, `track`, `cancel`) ve TR kargo firmaları için takip linkleri.
+
+### Tasarım sınırları ve geri alma
+
+- Mağaza sahibi, ekibi ve AI yalnızca storefront tasarımını ve içeriğini (tema token'ları, section'lar, sayfalar,
+  menüler, yönlendirmeler) değiştirebilir. Backend, admin paneli ve checkout akışı tema/editör ile değiştirilemez.
+- Korunan katmanlar tasarımın parçası değildir: pixel ve analytics kodları, consent (çerez izni) davranışı, checkout,
+  sepet ve hesap sayfaları. Tema yayınlama veya rollback bunlara dokunmaz.
+- Section içeriğinde kod çalıştırılamaz: zengin metin allow-list ile temizlenir; herhangi bir prop'ta
+  `<script>`, `<iframe>`, `javascript:`, HTML event attribute vb. bulunursa kayıt reddedilir. "Özel kod" section'ı yoktur.
+- Sistem section'ları kilitlidir (`requiredIn`): header ve footer global alanda; `product-main`, `collection-main`,
+  `cart-main`, `search-main` ve `not-found-main` kendi şablonlarında zorunludur, silinemez ve kapatılamaz.
+- `/checkout`, `/cart`, `/account`, `/api`, `robots.txt`, `sitemap*` gibi sistem yolları yönlendirilemez.
+- Geri alma: tema, sayfa ve menü taslaklarının her kaydı `draft_revisions` tablosunda revizyon olarak tutulur
+  (kim/hangi AI ajanı/ne zaman). `…/storefront/history/:resource/:id` altında `undo`, `redo` ve `restore`
+  uç noktaları bulunur; revizyonlar ağaç yapısındadır (geri alınıp düzenlenen dal kaybolmaz, restore ile dönülebilir).
+  Yayındaki site yalnızca publish ile değişir; yayınlanmış sürümler için ayrıca publication rollback vardır.

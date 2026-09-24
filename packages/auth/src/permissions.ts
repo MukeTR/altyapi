@@ -21,6 +21,8 @@ export const RESOURCES = [
   "ai_actions",
   "developer",
   "audit",
+  /** Pixels, analytics and consent: a protected layer, never editable through design tools. */
+  "tracking",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -66,8 +68,9 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "ai_actions:write",
   ]),
   marketing_manager: new Set<Permission>([
-    ...read("store", "catalog", "customers", "analytics", "karmatik", "yanit", "ai_actions"),
+    ...read("store", "catalog", "customers", "analytics", "karmatik", "yanit", "ai_actions", "tracking"),
     ...write("campaigns", "marketing", "content", "storefront", "media"),
+    "tracking:manage",
     "storefront:publish",
     "content:publish",
     "campaigns:publish",

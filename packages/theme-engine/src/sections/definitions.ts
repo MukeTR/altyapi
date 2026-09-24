@@ -20,6 +20,11 @@ export interface SectionDefinition {
   renderer: string;
   /** Only one instance per page/global tree. */
   singleton?: boolean;
+  /**
+   * System section: must be present exactly once on the listed placements and cannot be
+   * removed or disabled by merchants or AI (checkout-critical and navigation sections).
+   */
+  requiredIn?: (PageTypeName | "global")[];
 }
 
 const ALL_PAGES: PageTypeName[] = ["home", "product", "collection", "page", "landing", "cart", "search", "not_found"];
@@ -63,6 +68,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["global"],
     renderer: "builtin:header@1",
     singleton: true,
+    requiredIn: ["global"],
   },
   {
     type: "footer",
@@ -84,6 +90,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["global"],
     renderer: "builtin:footer@1",
     singleton: true,
+    requiredIn: ["global"],
   },
   {
     type: "hero",
@@ -385,6 +392,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["product"],
     renderer: "builtin:product-main@1",
     singleton: true,
+    requiredIn: ["product"],
   },
   {
     type: "collection-main",
@@ -403,6 +411,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["collection"],
     renderer: "builtin:collection-main@1",
     singleton: true,
+    requiredIn: ["collection"],
   },
   {
     type: "cart-main",
@@ -414,6 +423,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["cart"],
     renderer: "builtin:cart-main@1",
     singleton: true,
+    requiredIn: ["cart"],
   },
   {
     type: "search-main",
@@ -425,6 +435,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["search"],
     renderer: "builtin:search-main@1",
     singleton: true,
+    requiredIn: ["search"],
   },
   {
     type: "not-found-main",
@@ -436,6 +447,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     allowedIn: ["not_found"],
     renderer: "builtin:not-found-main@1",
     singleton: true,
+    requiredIn: ["not_found"],
   },
 ];
 

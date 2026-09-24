@@ -71,6 +71,13 @@
       "when": 1790250547920,
       "tag": "0009_checkout_orders_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790252088454,
+      "tag": "0010_draft_revisions",
+      "breakpoints": true
     }
   ]
 }

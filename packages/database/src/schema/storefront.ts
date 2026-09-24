@@ -286,3 +286,34 @@ export const slugHistory = pgTable(
     index("slug_history_resource_idx").on(t.resourceType, t.resourceId),
   ],
 );
+
+/**
+ * Every saved draft state of a theme, page or menu. Revisions form a tree (parent pointer):
+ * undo moves the draft to the parent, redo to the newest child, restore copies any revision
+ * into a new one. Changes made by AI actions are recorded the same way, so they are undoable.
+ */
+export const draftRevisions = pgTable(
+  "draft_revisions",
+  {
+    id: uuid().primaryKey(),
+    organizationId: uuid().notNull(),
+    storeId: uuid()
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    resourceType: text().notNull(),
+    resourceId: uuid().notNull(),
+    revision: integer().notNull(),
+    parentRevision: integer(),
+    snapshot: jsonb().$type<Record<string, unknown>>().notNull(),
+    source: text().notNull(),
+    label: text(),
+    principalType: text(),
+    principalId: uuid(),
+    agentId: uuid(),
+    createdAt: tstz().notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("draft_revisions_uq").on(t.resourceType, t.resourceId, t.revision),
+    index("draft_revisions_parent_idx").on(t.resourceType, t.resourceId, t.parentRevision),
+  ],
+);

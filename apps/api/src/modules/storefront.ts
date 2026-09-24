@@ -9,6 +9,9 @@ import {
   deletePage,
   deleteRedirect,
   getActiveTheme,
+  getRevision,
+  listRevisions,
+  moveDraft,
   getPage,
   listNavigations,
   listPages,
@@ -49,7 +52,7 @@ const pageView = (p: PageRow) => ({
   draftSeo: p.draftSeo as Record<string, unknown>,
   draftRevision: p.draftRevision,
   publishedRevision: p.publishedRevision,
-  hasUnpublishedChanges: p.publishedRevision === null || p.draftRevision > p.publishedRevision,
+  hasUnpublishedChanges: p.draftRevision !== p.publishedRevision,
   publishAt: p.publishAt,
   unpublishAt: p.unpublishAt,
   campaignId: p.campaignId,
@@ -214,6 +217,33 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
       assertCan(ctx, "storefront:read");
       return reply.status(201).send(createPreviewToken(deps.env.APP_SIGNING_SECRET, ctx.storeId));
     },
+  );
+
+  // Draft history: undo / redo / restore for theme, pages and menus (the live site changes only on publish).
+  const historyParams = storeParams.extend({ resource: z.enum(["theme", "page", "navigation"]), resourceId: z.uuid() });
+  app.get(`${base}/history/:resource/:resourceId`, { schema: { tags: ["storefront"], params: historyParams } }, async (req) =>
+    listRevisions(deps.db, await storeContext(deps, req), req.params.resource, req.params.resourceId),
+  );
+  app.get(
+    `${base}/history/:resource/:resourceId/:revision`,
+    { schema: { tags: ["storefront"], params: historyParams.extend({ revision: z.coerce.number().int().positive() }) } },
+    async (req) => getRevision(deps.db, await storeContext(deps, req), req.params.resource, req.params.resourceId, req.params.revision),
+  );
+  app.post(
+    `${base}/history/:resource/:resourceId/undo`,
+    { schema: { tags: ["storefront"], params: historyParams, body: z.object({ expectedRevision: z.number().int().positive() }) } },
+    async (req) => moveDraft(deps.db, await storeContext(deps, req), req.params.resource, req.params.resourceId, { kind: "undo" }, req.body.expectedRevision),
+  );
+  app.post(
+    `${base}/history/:resource/:resourceId/redo`,
+    { schema: { tags: ["storefront"], params: historyParams, body: z.object({ expectedRevision: z.number().int().positive() }) } },
+    async (req) => moveDraft(deps.db, await storeContext(deps, req), req.params.resource, req.params.resourceId, { kind: "redo" }, req.body.expectedRevision),
+  );
+  app.post(
+    `${base}/history/:resource/:resourceId/restore`,
+    { schema: { tags: ["storefront"], params: historyParams, body: z.object({ revision: z.number().int().positive(), expectedRevision: z.number().int().positive() }) } },
+    async (req) =>
+      moveDraft(deps.db, await storeContext(deps, req), req.params.resource, req.params.resourceId, { kind: "restore", revision: req.body.revision }, req.body.expectedRevision),
   );
 
   app.get(`${base}/navigations`, { schema: { tags: ["storefront"], params: storeParams } }, async (req) => ({

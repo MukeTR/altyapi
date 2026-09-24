@@ -37,6 +37,7 @@ import type { PageTypeName } from "./sections/definitions";
 import { themeSettingsSchema } from "./theme-settings";
 import { collectAssetIds, pageContentInputSchema, validatePageContent } from "./validation";
 import { LOCALES } from "./sections/primitives";
+import { ensureBaseline, navigationSnapshot, nextRevisionNumber, pageSnapshot, recordRevision, themeSnapshot } from "./history";
 
 type Scope = { organizationId: string; storeId: string };
 const scopeOf = (ctx: StoreContext): Scope => ({ organizationId: ctx.organizationId, storeId: ctx.storeId });
@@ -93,6 +94,14 @@ export async function bootstrapStorefront(tx: Transaction, scope: Scope & { stor
     await tx.insert(navigations).values({ id: newId(), organizationId: scope.organizationId, storeId: scope.storeId, ...n });
   }
   await tx.insert(storefrontState).values({ storeId: scope.storeId, organizationId: scope.organizationId, activeThemeId: themeId });
+  const created = await tx.query.themes.findFirst({ where: eq(themes.id, themeId) });
+  await recordRevision(tx, scope, { type: "theme", id: themeId, revision: 1, parent: null, snapshot: themeSnapshot(created!), meta: { source: "bootstrap" } });
+  for (const p of await tx.select().from(pages).where(eq(pages.storeId, scope.storeId))) {
+    await recordRevision(tx, scope, { type: "page", id: p.id, revision: p.draftRevision, parent: null, snapshot: pageSnapshot(p), meta: { source: "bootstrap" } });
+  }
+  for (const n of await tx.select().from(navigations).where(eq(navigations.storeId, scope.storeId))) {
+    await recordRevision(tx, scope, { type: "navigation", id: n.id, revision: n.revision, parent: null, snapshot: navigationSnapshot(n), meta: { source: "bootstrap" } });
+  }
   await publishCore(tx, scope, { includeTheme: true, pageIds: "all", reason: "initial", principalId: scope.principalId });
 }
 
@@ -127,7 +136,8 @@ async function publishCore(tx: Transaction, scope: Scope, opts: PublishOptions):
   });
   let themeVersionId = current?.themeVersionId ?? latestThemeVersion?.id;
   let themePublished = false;
-  if (opts.includeTheme && (!latestThemeVersion || theme.draftRevision > latestThemeVersion.sourceRevision)) {
+  // Revisions form a tree (undo/redo), so "different from what was published" means "not equal".
+  if (opts.includeTheme && (!latestThemeVersion || theme.draftRevision !== latestThemeVersion.sourceRevision)) {
     themeVersionId = newId();
     await tx.insert(themeVersions).values({
       id: themeVersionId,
@@ -165,7 +175,7 @@ async function publishCore(tx: Transaction, scope: Scope, opts: PublishOptions):
 
   const publishedPages: { pageId: string; pageVersionId: string }[] = [];
   for (const page of candidates) {
-    const needsVersion = !pageMap[page.id] || page.draftRevision > (page.publishedRevision ?? 0);
+    const needsVersion = !pageMap[page.id] || page.draftRevision !== page.publishedRevision;
     if (!needsVersion) continue;
     const previous = pageMap[page.id]
       ? await tx.query.pageVersions.findFirst({ where: eq(pageVersions.id, pageMap[page.id]!) })
@@ -311,7 +321,7 @@ export async function getActiveTheme(db: Database, ctx: StoreContext) {
       where: eq(themeVersions.themeId, state.activeThemeId),
       orderBy: desc(themeVersions.version),
     });
-    return { theme: theme!, hasUnpublishedChanges: !latest || theme!.draftRevision > latest.sourceRevision };
+    return { theme: theme!, hasUnpublishedChanges: !latest || theme!.draftRevision !== latest.sourceRevision };
   });
 }
 
@@ -329,16 +339,19 @@ export async function updateThemeDraft(db: Database, ctx: StoreContext, input: z
     if (theme.draftRevision !== input.expectedRevision) {
       throw conflict("errors.content.revision_conflict", { currentRevision: theme.draftRevision });
     }
+    await ensureBaseline(tx, scopeOf(ctx), "theme", theme.id, theme.draftRevision, themeSnapshot(theme));
+    const revision = await nextRevisionNumber(tx, "theme", theme.id, theme.draftRevision);
     const [updated] = await tx
       .update(themes)
       .set({
         name: input.name ?? theme.name,
         draftSettings: settings ?? theme.draftSettings,
         draftGlobalSections: globalSections ?? theme.draftGlobalSections,
-        draftRevision: theme.draftRevision + 1,
+        draftRevision: revision,
       })
       .where(eq(themes.id, theme.id))
       .returning();
+    await recordRevision(tx, scopeOf(ctx), { type: "theme", id: theme.id, revision, parent: theme.draftRevision, snapshot: themeSnapshot(updated!) });
     const assetIds = [
       ...(globalSections ? collectAssetIds(globalSections) : collectAssetIds(theme.draftGlobalSections)),
       ...Object.values((settings ?? theme.draftSettings).brand ?? {}).filter((v): v is string => typeof v === "string"),
@@ -457,6 +470,7 @@ export async function createPage(db: Database, ctx: StoreContext, input: z.infer
       ...collectAssetIds(content),
       ...(input.seo?.imageAssetId ? [input.seo.imageAssetId] : []),
     ]);
+    await recordRevision(tx, scopeOf(ctx), { type: "page", id: row!.id, revision: row!.draftRevision, parent: null, snapshot: pageSnapshot(row!) });
     await recordAudit(tx, {
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
@@ -483,6 +497,8 @@ export async function updatePageDraft(db: Database, ctx: StoreContext, pageId: s
   }
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
     if (input.handle && input.handle !== page.handle) await assertHandleFree(tx, ctx.storeId, input.handle, page.id);
+    await ensureBaseline(tx, scopeOf(ctx), "page", page.id, page.draftRevision, pageSnapshot(page));
+    const revision = await nextRevisionNumber(tx, "page", page.id, page.draftRevision);
     const [updated] = await tx
       .update(pages)
       .set({
@@ -491,12 +507,13 @@ export async function updatePageDraft(db: Database, ctx: StoreContext, pageId: s
         draftContent: content ?? page.draftContent,
         draftSeo: (input.seo as SeoFields | undefined) ?? page.draftSeo,
         campaignId: input.campaignId === undefined ? page.campaignId : input.campaignId,
-        draftRevision: page.draftRevision + 1,
+        draftRevision: revision,
       })
       // Optimistic concurrency: the editor must send the revision it started from.
       .where(and(eq(pages.id, pageId), eq(pages.draftRevision, input.expectedRevision)))
       .returning();
     if (!updated) throw conflict("errors.content.revision_conflict", { currentRevision: page.draftRevision });
+    await recordRevision(tx, scopeOf(ctx), { type: "page", id: page.id, revision, parent: page.draftRevision, snapshot: pageSnapshot(updated) });
     const seo = updated.draftSeo;
     await setAssetReferences(tx, scopeOf(ctx), { type: "page", id: page.id }, [
       ...collectAssetIds(updated.draftContent),
@@ -705,18 +722,31 @@ export async function upsertNavigation(db: Database, ctx: StoreContext, handle: 
   if (!isValidSlug(handle)) throw invalid("errors.navigation.invalid_handle");
   const items = normalizeNav(input.items);
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
-    const [row] = await tx
-      .insert(navigations)
-      .values({ id: newId(), organizationId: ctx.organizationId, storeId: ctx.storeId, handle, name: input.name, items })
-      .onConflictDoUpdate({
-        target: [navigations.storeId, navigations.handle],
-        set: { name: input.name, items, revision: sql`${navigations.revision} + 1`, updatedAt: new Date() },
-      })
-      .returning();
-    // Mark the theme draft dirty so the change is picked up by the next theme publish.
+    const existing = await tx.query.navigations.findFirst({ where: and(eq(navigations.storeId, ctx.storeId), eq(navigations.handle, handle)) });
+    let row: typeof navigations.$inferSelect;
+    if (existing) {
+      await ensureBaseline(tx, scopeOf(ctx), "navigation", existing.id, existing.revision, navigationSnapshot(existing));
+      const revision = await nextRevisionNumber(tx, "navigation", existing.id, existing.revision);
+      [row] = (await tx.update(navigations).set({ name: input.name, items, revision }).where(eq(navigations.id, existing.id)).returning()) as [typeof row];
+      await recordRevision(tx, scopeOf(ctx), { type: "navigation", id: existing.id, revision, parent: existing.revision, snapshot: navigationSnapshot(row) });
+    } else {
+      [row] = (await tx.insert(navigations).values({ id: newId(), organizationId: ctx.organizationId, storeId: ctx.storeId, handle, name: input.name, items }).returning()) as [typeof row];
+      await recordRevision(tx, scopeOf(ctx), { type: "navigation", id: row.id, revision: row.revision, parent: null, snapshot: navigationSnapshot(row) });
+    }
+    // Menus go live with the theme: record a theme revision so the theme draft shows unpublished changes.
     const { theme } = await getActiveThemeTx(tx, ctx.storeId);
-    await tx.update(themes).set({ draftRevision: theme.draftRevision + 1 }).where(eq(themes.id, theme.id));
-    return row!;
+    await ensureBaseline(tx, scopeOf(ctx), "theme", theme.id, theme.draftRevision, themeSnapshot(theme));
+    const themeRevision = await nextRevisionNumber(tx, "theme", theme.id, theme.draftRevision);
+    await tx.update(themes).set({ draftRevision: themeRevision }).where(eq(themes.id, theme.id));
+    await recordRevision(tx, scopeOf(ctx), {
+      type: "theme",
+      id: theme.id,
+      revision: themeRevision,
+      parent: theme.draftRevision,
+      snapshot: themeSnapshot(theme),
+      meta: { source: "navigation_change", label: `navigation:${handle}` },
+    });
+    return row;
   });
 }
 
@@ -730,8 +760,14 @@ const pathSchema = z
   .max(1000)
   .refine((p) => p.startsWith("/") && !p.startsWith("//"), "errors.redirect.invalid_path");
 
+/**
+ * System routes can never be redirected or shadowed by merchant content (checkout, cart,
+ * account, APIs, crawler files and framework assets).
+ */
+export const RESERVED_PATH = /^\/(?:[a-z]{2}\/)?(?:checkout|cart|account|api|_next|__edge|robots\.txt|sitemap\.xml|sitemaps)(?:\/|$|\?)/i;
+
 export const createRedirectSchema = z.object({
-  fromPath: pathSchema,
+  fromPath: pathSchema.refine((p) => !RESERVED_PATH.test(p), "errors.redirect.reserved_path"),
   toPath: z.union([pathSchema, z.url()]),
   statusCode: z.union([z.literal(301), z.literal(302)]).default(301),
 });

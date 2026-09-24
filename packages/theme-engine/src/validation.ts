@@ -1,9 +1,23 @@
 import { z } from "zod";
 import { newId } from "@altyapi/commerce-core";
 import type { PageContent, SectionInstance } from "@altyapi/database";
-import { getSectionDefinition, type PageTypeName } from "./sections/definitions";
+import { getSectionDefinition, SECTION_DEFINITIONS, type PageTypeName } from "./sections/definitions";
 
 export const MAX_SECTIONS_PER_PAGE = 60;
+
+/**
+ * Design content may never carry executable code. Pixels, analytics and other scripts belong
+ * to the protected tracking layer; rich text is sanitized and this guard rejects anything that
+ * still looks like code in any prop (e.g. pasted embed snippets in plain text fields).
+ */
+const CODE_PATTERN = /<\s*\/?\s*(script|iframe|object|embed|link|meta|style|base|form)\b|javascript\s*:|vbscript\s*:|data\s*:\s*text\/html|<[^>]*\son[a-z]+\s*=/i;
+
+function findCode(value: unknown, path: string, out: ContentIssue[]) {
+  if (typeof value === "string") {
+    if (CODE_PATTERN.test(value)) out.push({ path, message: "errors.section.code_not_allowed" });
+  } else if (Array.isArray(value)) value.forEach((v, i) => findCode(v, `${path}.${i}`, out));
+  else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) findCode(v, `${path}.${k}`, out);
+}
 
 export interface ContentIssue {
   path: string;
@@ -124,6 +138,12 @@ export function validatePageContent(
       issues.push({ path: `${path}.visibility`, message: "errors.section.invalid_schedule" });
     }
 
+    if (props.success) findCode(props.data, `${path}.props`, issues);
+    blocks.forEach((b, j) => findCode(b.props, `${path}.blocks.${j}.props`, issues));
+    if (def.requiredIn?.includes(placement) && raw.disabled) {
+      issues.push({ path, message: "errors.section.required_cannot_be_disabled" });
+    }
+
     if (props.success) {
       sections.push({
         id,
@@ -137,6 +157,13 @@ export function validatePageContent(
       });
     }
   });
+
+  // System sections required on this placement must be present (they cannot be deleted).
+  for (const def of SECTION_DEFINITIONS) {
+    if (def.requiredIn?.includes(placement) && !input.sections.some((sec) => sec.type === def.type)) {
+      issues.push({ path: "sections", message: `errors.section.required_missing:${def.type}` });
+    }
+  }
 
   return issues.length ? { ok: false, issues } : { ok: true, content: { sections } };
 }
