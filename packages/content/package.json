@@ -10,7 +10,17 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@altyapi/audit": "workspace:*",
+    "@altyapi/auth": "workspace:*",
     "@altyapi/commerce-core": "workspace:*",
+    "@altyapi/database": "workspace:*",
+    "@altyapi/events": "workspace:*",
+    "@altyapi/observability": "workspace:*",
+    "@altyapi/site": "workspace:*",
+    "@altyapi/storage": "workspace:*",
+    "@altyapi/tenancy": "workspace:*",
+    "domhandler": "^6.0.1",
+    "htmlparser2": "^12.0.0",
     "sanitize-html": "^2.17.7",
     "zod": "^4.6.5"
   },

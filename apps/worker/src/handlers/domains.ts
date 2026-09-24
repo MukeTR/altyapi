@@ -22,12 +22,22 @@ export function domainEventHandlers(deps: WorkerDeps): EventHandler[] {
       // Content changes bump stores.content_version; the edge cache key includes it. KV writes are
       // coalesced per store (flushed by the scheduler) to respect KV per-key write limits.
       // storefront.publication_switched covers every live pointer move, including rollbacks.
+      // Content entries go live one by one (record versions) and site settings change what
+      // every page renders (modules, URL style, identity, locations), so they count too.
       name: "edge-content-version",
       events: [
         "storefront.publication_switched",
         "theme.published",
         "page.published",
         "redirect.changed",
+        "content.entry.published",
+        "content.entry.unpublished",
+        "content.entry.archived",
+        "content.type.changed",
+        "site.profile_changed",
+        "site.modules_changed",
+        "site.identity_changed",
+        "site.locations_changed",
         "product.created",
         "product.updated",
         "product.published",

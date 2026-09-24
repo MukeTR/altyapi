@@ -30,7 +30,7 @@ import { getOrderByAccessToken } from "@altyapi/orders";
 import { catalogItemId } from "@altyapi/marketing";
 import { AppError } from "@altyapi/commerce-core";
 import type { AppDeps } from "../deps";
-import { storefrontContext } from "../plugins/storefront-auth";
+import { storefrontCommerceContext } from "../plugins/storefront-auth";
 
 function cartToken(req: FastifyRequest): string {
   const t = req.headers["x-altyapi-cart-token"];
@@ -91,73 +91,73 @@ export const storefrontCartRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = as
   const limit = { rateLimit: { max: 120, timeWindow: "1 minute", keyGenerator: (r: FastifyRequest) => clientIp(r) } };
 
   app.post("/storefront/v1/carts", { config: limit, schema: { hide: true, body: createCartSchema } }, async (req, reply) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { token } = await createCart(deps.db, ctx, req.body);
     const { cart, calc } = await viewCart(cd, ctx, token);
     return reply.status(201).send({ token, cart: cartView(cart, calc) });
   });
 
   app.get("/storefront/v1/cart", { config: limit, schema: { hide: true } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await viewCart(cd, ctx, cartToken(req));
     return cartView(cart, calc);
   });
 
   app.post("/storefront/v1/cart/lines", { config: limit, schema: { hide: true, body: addLineSchema } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await addLine(cd, ctx, cartToken(req), req.body);
     return cartView(cart, calc);
   });
 
   app.patch("/storefront/v1/cart/lines/:lineId", { config: limit, schema: { hide: true, params: z.object({ lineId: z.uuid() }), body: updateLineSchema } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await updateLine(cd, ctx, cartToken(req), req.params.lineId, req.body);
     return cartView(cart, calc);
   });
 
   app.put("/storefront/v1/cart/contact", { config: limit, schema: { hide: true, body: setContactSchema } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await setContact(cd, ctx, cartToken(req), req.body);
     return cartView(cart, calc);
   });
 
   app.put("/storefront/v1/cart/addresses", { config: limit, schema: { hide: true, body: setAddressesSchema } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await setAddresses(cd, ctx, cartToken(req), req.body);
     return cartView(cart, calc);
   });
 
   app.get("/storefront/v1/cart/shipping-rates", { config: limit, schema: { hide: true } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     return { items: await shippingOptions(cd, ctx, cartToken(req)) };
   });
 
   app.put("/storefront/v1/cart/shipping-rate", { config: limit, schema: { hide: true, body: z.object({ rateId: z.uuid() }) } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await selectShippingRate(cd, ctx, cartToken(req), req.body.rateId);
     return cartView(cart, calc);
   });
 
   app.post("/storefront/v1/cart/coupons", { config: { rateLimit: { max: 20, timeWindow: "1 minute", keyGenerator: (r: FastifyRequest) => clientIp(r) } }, schema: { hide: true, body: couponSchema } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await applyCoupon(cd, ctx, cartToken(req), req.body.code);
     return cartView(cart, calc);
   });
 
   app.delete("/storefront/v1/cart/coupons/:code", { config: limit, schema: { hide: true, params: z.object({ code: z.string().max(64) }) } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     const { cart, calc } = await removeCoupon(cd, ctx, cartToken(req), req.params.code.toUpperCase());
     return cartView(cart, calc);
   });
 
   app.put("/storefront/v1/cart/attribution", { config: limit, schema: { hide: true, body: attributionSchema } }, async (req, reply) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     await setAttribution(cd, ctx, cartToken(req), req.body);
     return reply.status(204).send();
   });
 
   app.get("/storefront/v1/payment-methods", { config: limit, schema: { hide: true } }, async (req) => {
-    const ctx = await storefrontContext(deps, req);
+    const ctx = await storefrontCommerceContext(deps, req);
     return { items: await checkoutPaymentMethods({ ...cd, payments: deps.payments, apiUrl: deps.env.API_URL, reservationMinutes: 30 }, ctx) };
   });
 
@@ -165,7 +165,7 @@ export const storefrontCartRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = as
     "/storefront/v1/checkout",
     { config: { rateLimit: { max: 10, timeWindow: "1 minute", keyGenerator: (r: FastifyRequest) => clientIp(r) } }, schema: { hide: true, body: startCheckoutSchema } },
     async (req, reply) => {
-      const ctx = await storefrontContext(deps, req);
+      const ctx = await storefrontCommerceContext(deps, req);
       const result = await startCheckout(
         { ...cd, payments: deps.payments, apiUrl: deps.env.API_URL, reservationMinutes: 30, appEnv: deps.env.APP_ENV },
         ctx,
@@ -181,7 +181,7 @@ export const storefrontCartRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = as
     "/storefront/v1/orders/:orderId",
     { config: limit, schema: { hide: true, params: z.object({ orderId: z.uuid() }), querystring: z.object({ t: z.string().min(20).max(100) }) } },
     async (req) => {
-      const ctx = await storefrontContext(deps, req);
+      const ctx = await storefrontCommerceContext(deps, req);
       const o = await getOrderByAccessToken(deps.db, ctx, req.params.orderId, req.query.t);
       return {
         id: o.order.id,

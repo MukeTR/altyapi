@@ -260,14 +260,16 @@ async function freeHandle(deps: EkosistemServerDeps, ctx: StoreContext, title: s
 /** Section tree of the draft: FAQ for question opportunities, rich text for the others. */
 function draftContent(o: OpportunityRow, locale: (typeof LOCALES)[number], title: string): PageContentInput {
   const question = safeText(o.query, 300) ?? title.slice(0, 300);
+  // Pinned to the HTML versions of the sections (rich-text@2 and faq@2 hold richDoc).
   const faq = (answerHtml: string) => ({
     type: "faq",
+    version: 1,
     props: { heading: { [locale]: FAQ_HEADING[locale] }, emitStructuredData: true },
     blocks: [{ type: "item", props: { question: { [locale]: question }, answer: answerHtml ? { [locale]: answerHtml } : {} } }],
   });
   if (o.kind === "faq") return { sections: [faq(paragraphsHtml(o.body, 4000))] };
   const sections: PageContentInput["sections"] = [
-    { type: "rich-text", props: { heading: { [locale]: title.slice(0, 160) }, body: { [locale]: paragraphsHtml(o.body, 19_000) } } },
+    { type: "rich-text", version: 1, props: { heading: { [locale]: title.slice(0, 160) }, body: { [locale]: paragraphsHtml(o.body, 19_000) } } },
   ];
   // A comparison answers a concrete question; keep it as a FAQ entry for the merchant to answer.
   if (o.kind === "comparison_page" && o.query && safeText(o.query, 300)) sections.push(faq(""));

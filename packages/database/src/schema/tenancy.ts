@@ -116,6 +116,10 @@ export const stores = pgTable(
     routingVersion: integer().notNull().default(1),
     /** Incremented on theme/page publish and catalog changes; storefront cache keys include it. */
     contentVersion: integer().notNull().default(1),
+    /** Incremented whenever site_modules or the site profile change; module gates cache on it. */
+    modulesVersion: integer().notNull().default(1),
+    /** Incremented whenever the compiled site policy changes; policy checks cache on it. */
+    policyVersion: integer().notNull().default(1),
     ...timestamps,
   },
   (t) => [uniqueIndex("stores_slug_uq").on(t.slug), index("stores_org_idx").on(t.organizationId)],

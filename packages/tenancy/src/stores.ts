@@ -3,6 +3,7 @@ import { LOCALE_CODES, conflict, currencySchema, invalid, isValidSlug, newId, no
 import { and, channels, eq, inArray, sql, storeDomains, stores, withTenantTx, type Database, type Transaction } from "@altyapi/database";
 import { recordAudit } from "@altyapi/audit";
 import { appendEvent } from "@altyapi/events";
+import { SITE_KINDS, loadActiveModules, loadActiveModulesByStore, seedSiteFromPreset, type ModuleKey, type SiteKind } from "@altyapi/site";
 import { assertCan, can, type OrganizationContext, type StoreContext, type StoreSnapshot } from "./context";
 
 /** Subdomains that can never be used as store slugs on the platform root domain. */
@@ -23,6 +24,12 @@ export const createStoreSchema = z.object({
   timezone: z.string().default("Europe/Istanbul"),
   countryCode: z.string().length(2).toUpperCase().default("TR"),
   contactEmail: z.email().optional(),
+  /**
+   * Site-kind preset the store starts from: its site profile and default capability modules
+   * (docs/platform/site-turleri-ve-cms.md §1). Defaults to ecommerce, what every store was
+   * before site kinds existed.
+   */
+  siteKind: z.enum(SITE_KINDS).optional(),
 });
 
 export const updateStoreSettingsSchema = z.object({
@@ -35,7 +42,7 @@ export const updateStoreSettingsSchema = z.object({
   status: z.enum(["setup", "active", "paused"]).optional(),
 });
 
-function toSnapshot(row: typeof stores.$inferSelect): StoreSnapshot {
+function toSnapshot(row: typeof stores.$inferSelect, modules: ModuleKey[]): StoreSnapshot {
   return {
     id: row.id,
     slug: row.slug,
@@ -49,6 +56,9 @@ function toSnapshot(row: typeof stores.$inferSelect): StoreSnapshot {
     countryCode: row.countryCode,
     routingVersion: row.routingVersion,
     contentVersion: row.contentVersion,
+    modules,
+    modulesVersion: row.modulesVersion,
+    policyVersion: row.policyVersion,
   };
 }
 
@@ -67,7 +77,10 @@ export async function createStore(
   platform: { rootDomain: string },
   hooks?: {
     /** Runs inside the creation transaction (e.g. storefront bootstrap) so a store is never half-created. */
-    onCreated?: (tx: Transaction, store: { organizationId: string; storeId: string; storeName: string; principalId: string | null }) => Promise<void>;
+    onCreated?: (
+      tx: Transaction,
+      store: { organizationId: string; storeId: string; storeName: string; principalId: string | null; siteKind: SiteKind },
+    ) => Promise<void>;
   },
 ): Promise<StoreSnapshot> {
   assertCan(ctx, "store:manage");
@@ -75,6 +88,7 @@ export async function createStore(
   if (!isValidSlug(slug) || slug.length < 3) throw invalid("errors.store.invalid_slug", { slug });
   if (RESERVED_STORE_SLUGS.has(slug)) throw conflict("errors.store.slug_reserved", { slug });
   assertTimezone(input.timezone);
+  const siteKind = input.siteKind ?? "ecommerce";
 
   const storeId = newId();
   return withTenantTx(db, { organizationId: ctx.organizationId, storeId }, async (tx) => {
@@ -124,6 +138,9 @@ export async function createStore(
       verificationStatus: "active",
     });
 
+    // Site profile and preset modules exist from the first moment, like the channel and domain.
+    const modules = await seedSiteFromPreset(tx, { organizationId: ctx.organizationId, storeId }, siteKind);
+
     await appendEvent(tx, {
       type: "store.created",
       organizationId: ctx.organizationId,
@@ -138,16 +155,18 @@ export async function createStore(
       action: "store.created",
       resourceType: "store",
       resourceId: storeId,
-      after: { slug, name: input.name, hostname },
+      after: { slug, name: input.name, hostname, siteKind, modules },
     });
     await hooks?.onCreated?.(tx, {
       organizationId: ctx.organizationId,
       storeId,
       storeName: input.name,
       principalId: ctx.principal.userId,
+      siteKind,
     });
     const [fresh] = await tx.select().from(stores).where(eq(stores.id, storeId));
-    return toSnapshot(fresh ?? row!);
+    // Re-read: creation hooks run in this transaction and may adjust the seeded modules.
+    return toSnapshot(fresh ?? row!, await loadActiveModules(tx, storeId));
   });
 }
 
@@ -166,7 +185,8 @@ export async function listStores(db: Database, ctx: OrganizationContext): Promis
           : and(eq(stores.organizationId, ctx.organizationId), inArray(stores.id, storeIds)),
       )
       .orderBy(stores.name);
-    return rows.map(toSnapshot);
+    const modules = await loadActiveModulesByStore(tx, rows.map((r) => r.id));
+    return rows.map((r) => toSnapshot(r, modules.get(r.id) ?? []));
   });
 }
 
@@ -175,11 +195,12 @@ export async function listStores(db: Database, ctx: OrganizationContext): Promis
  * a store in another organization, or one the principal has no grant for, is "not found".
  */
 export async function loadStoreContext(db: Database, ctx: OrganizationContext, storeId: string): Promise<StoreContext> {
-  const row = await withTenantTx(db, { organizationId: ctx.organizationId, storeId }, (tx) =>
-    tx.query.stores.findFirst({ where: and(eq(stores.id, storeId), eq(stores.organizationId, ctx.organizationId)) }),
-  );
-  if (!row || !can(ctx, "store:read", storeId)) throw notFound("store", storeId);
-  return { ...ctx, storeId, store: toSnapshot(row) };
+  const loaded = await withTenantTx(db, { organizationId: ctx.organizationId, storeId }, async (tx) => {
+    const row = await tx.query.stores.findFirst({ where: and(eq(stores.id, storeId), eq(stores.organizationId, ctx.organizationId)) });
+    return row ? { row, modules: await loadActiveModules(tx, storeId) } : null;
+  });
+  if (!loaded || !can(ctx, "store:read", storeId)) throw notFound("store", storeId);
+  return { ...ctx, storeId, store: toSnapshot(loaded.row, loaded.modules) };
 }
 
 export async function updateStoreSettings(
@@ -236,7 +257,7 @@ export async function updateStoreSettings(
       before: pickChanged(before, input),
       after: pickChanged(after!, input),
     });
-    return toSnapshot(after!);
+    return toSnapshot(after!, await loadActiveModules(tx, ctx.storeId));
   });
 }
 

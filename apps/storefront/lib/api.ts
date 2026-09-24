@@ -61,7 +61,7 @@ export interface SitemapData {
   supportedLocales: string[];
   products: { id?: string; handle: string; locale: string; updatedAt: string }[];
   collections: { id?: string; handle: string; locale: string; updatedAt: string }[];
-  pages: { type: string; handle: string; updatedAt: string; locales?: string[] }[];
+  pages: { type: string; handle: string; path?: string; updatedAt: string; locales?: string[] }[];
 }
 
 /** Cached per content version, so a publish or catalog change shows up in the sitemap right away. */

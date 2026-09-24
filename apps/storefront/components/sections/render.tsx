@@ -9,6 +9,14 @@ import {
   categoryCardsHeading, collectionMainOwnsH1, featuredCollectionHeading, productGridHeading, productMainOwnsH1,
 } from "./commerce";
 import { AnnouncementBarSection, Footer, Header, PopupSection } from "./layout";
+import {
+  EntryIndexMain, EntryList, EntryMain, FaqV2, RichTextV2,
+  entryIndexMainOwnsH1, entryListHeading, entryMainOwnsH1, faqV2Heading, richTextV2Heading,
+} from "./entries";
+import {
+  BusinessFacts, LocationsMap, OpeningHoursSection, StatutoryInfo,
+  businessFactsHeading, locationsMapHeading, openingHoursHeading, statutoryInfoHeading,
+} from "./business";
 
 /** Tag of a section's main heading: the page's single H1, or H2. */
 export type HeadingTag = "h1" | "h2";
@@ -50,6 +58,15 @@ const RENDERERS: Record<string, RendererEntry> = {
   "builtin:search-main@1": { render: SearchMain, ownsH1: always },
   "builtin:cart-main@1": { render: CartMain, ownsH1: always },
   "builtin:not-found-main@1": { render: NotFoundMain, ownsH1: always },
+  "builtin:rich-text@2": { render: RichTextV2, heading: richTextV2Heading },
+  "builtin:faq@2": { render: FaqV2, heading: faqV2Heading },
+  "builtin:entry-main@1": { render: EntryMain, ownsH1: entryMainOwnsH1 },
+  "builtin:entry-index-main@1": { render: EntryIndexMain, ownsH1: entryIndexMainOwnsH1 },
+  "builtin:entry-list@1": { render: EntryList, heading: entryListHeading },
+  "builtin:statutory-info@1": { render: StatutoryInfo, heading: statutoryInfoHeading },
+  "builtin:business-facts@1": { render: BusinessFacts, heading: businessFactsHeading },
+  "builtin:opening-hours@1": { render: OpeningHoursSection, heading: openingHoursHeading },
+  "builtin:locations-map@1": { render: LocationsMap, heading: locationsMapHeading },
 };
 
 export function registerRenderer(id: string, renderer: Renderer, options: Omit<RendererEntry, "render"> = {}) {

@@ -4,6 +4,7 @@ import { fontHref, getSite, renderCtx } from "@/lib/site";
 import { htmlAttributes, t } from "@/lib/i18n";
 import { mediaUrl } from "@/lib/media";
 import { Sections } from "@/components/sections/render";
+import { moduleOn } from "@/components/context";
 import { CartDrawer, CartProvider } from "@/components/client/cart";
 import { ConsentBanner, ConsentPreferencesLink } from "@/components/client/consent-banner";
 import { TrackingLayer } from "@/components/client/tracking-layer";
@@ -19,15 +20,38 @@ export async function generateMetadata(): Promise<Metadata> {
     ...(favicon && site.mediaBaseUrl ? { icons: { icon: mediaUrl(site.mediaBaseUrl, favicon, "thumbnail") ?? undefined } } : {}),
     // Stores that are not live yet (or previews) must not be indexed.
     ...(site.status !== "active" || site.preview ? { robots: { index: false, follow: false } } : {}),
+    // Search-console ownership tokens from the site profile, as <meta name="…" content="…">.
+    ...(Object.keys(site.verification ?? {}).length ? { verification: { other: site.verification } } : {}),
   };
+}
+
+/** Global sections rendered above the page content, and overlays rendered after everything. */
+const TOP_SECTIONS = new Set(["announcement-bar", "header", "countdown"]);
+const OVERLAY_SECTIONS = new Set(["popup"]);
+
+/**
+ * The cart (context, drawer, cart requests) exists only on sites that sell: without the
+ * commerce module there is no cart to load or show.
+ */
+function SiteFrame({ site, sells, children }: { site: { locale: string; defaultLocale: string; mediaBaseUrl: string | null }; sells: boolean; children: ReactNode }) {
+  if (!sells) return <>{children}</>;
+  return (
+    <CartProvider basePath={site.locale === site.defaultLocale ? "" : `/${site.locale}`}>
+      {children}
+      <CartDrawer locale={site.locale} mediaBase={site.mediaBaseUrl} />
+    </CartProvider>
+  );
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { site } = await getSite();
   const ctx = renderCtx(site, null, new URLSearchParams());
-  const before = site.globalSections.filter((s) => s.type === "announcement-bar" || s.type === "header" || s.type === "countdown");
-  const after = site.globalSections.filter((s) => s.type === "footer" || s.type === "newsletter");
-  const overlays = site.globalSections.filter((s) => s.type === "popup");
+  // Bars and the header go above the page, overlays at the end; every other global section
+  // (footer, newsletter, imprint, business facts, hours, locations) follows the page in its
+  // stored order.
+  const before = site.globalSections.filter((s) => TOP_SECTIONS.has(s.type));
+  const overlays = site.globalSections.filter((s) => OVERLAY_SECTIONS.has(s.type));
+  const after = site.globalSections.filter((s) => !TOP_SECTIONS.has(s.type) && !OVERLAY_SECTIONS.has(s.type));
   const fonts = fontHref(site);
   // Tracking and consent come from the protected tracking layer and are rendered here, outside
   // theme sections, so no design change can remove or alter them. Previews never track.
@@ -56,13 +80,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <p className="mt-4 text-muted-fg">{t(site.locale, "storeClosed")}</p>
           </main>
         ) : (
-          <CartProvider basePath={site.locale === site.defaultLocale ? "" : `/${site.locale}`}>
+          <SiteFrame site={site} sells={moduleOn(site, "commerce")}>
             <Sections sections={before} ctx={ctx} />
             <main id="main">{children}</main>
             <Sections sections={after} ctx={ctx} />
             <Sections sections={overlays} ctx={ctx} />
-            <CartDrawer locale={site.locale} mediaBase={site.mediaBaseUrl} />
-          </CartProvider>
+          </SiteFrame>
         )}
         {tracking && (
           <>

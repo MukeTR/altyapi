@@ -3,7 +3,7 @@ import type { ListingDto, RenderSection } from "@altyapi/theme-engine";
 import { mediaUrl, srcSet } from "@/lib/media";
 import { t } from "@/lib/i18n";
 import { minorToDecimal } from "@/lib/format";
-import { L, P, type RenderCtx } from "../context";
+import { L, P, moduleOn, type RenderCtx } from "../context";
 import { ProductCard, ProductGridList } from "../ui/product-card";
 import { JsonLd } from "../ui/json-ld";
 import { ProductPurchase } from "../client/product-purchase";
@@ -170,6 +170,7 @@ export function ProductMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
             locale={ctx.locale}
             currency={ctx.currency}
             labels={{ soldOut: t(ctx.locale, "soldOut"), lowStock: t(ctx.locale, "lowStock"), addToCart: t(ctx.locale, "addToCart") }}
+            purchasable={moduleOn(ctx.site, "commerce")}
           />
           {Boolean(p.showSku) && product.variants[0]?.sku && (
             <p className="text-xs text-muted-fg">
@@ -340,7 +341,8 @@ export function NotFoundMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
       <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-3xl">{L(ctx, p.heading) || "404"}</h1>
         {L(ctx, p.body) && <p className="text-muted-fg">{L(ctx, p.body)}</p>}
-        {Boolean(p.showSearch) && (
+        {/* Search looks through the catalog: a site without one has nothing to find there. */}
+        {Boolean(p.showSearch) && moduleOn(ctx.site, "catalog") && (
           <form method="get" action={P(ctx, "/search")} role="search" className="flex w-full gap-2">
             <input type="search" name="q" aria-label={t(ctx.locale, "search")} placeholder={t(ctx.locale, "searchPlaceholder")} className="flex-1 rounded-theme border border-line bg-surface px-3 py-2" />
             <button type="submit" className="btn btn-primary">{t(ctx.locale, "search")}</button>
@@ -353,7 +355,14 @@ export function NotFoundMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
 }
 
 
+/**
+ * The cart needs the cart context the layout provides only while commerce is on. The layout
+ * and this page read the same site snapshot, so right after commerce is turned on (the route
+ * already has the cart, the cached site does not yet) the section waits for the next render
+ * instead of rendering outside the provider.
+ */
 export function CartMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+  if (!moduleOn(ctx.site, "commerce")) return null;
   return (
     <SectionShell s={s} ctx={ctx}>
       <CartPage locale={ctx.locale} mediaBase={ctx.mediaBase} />

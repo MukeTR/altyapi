@@ -25,6 +25,13 @@ export const RESOURCES = [
   "tracking",
   /** Connections to integrators, marketplaces and feeds (credentials, sync, data ownership). */
   "integrations",
+  /**
+   * Site profile, capability modules, business identity and locations. site:write edits the
+   * business identity and locations; site:manage changes the site profile (kind, page URL
+   * style, language and AI crawler policy, verification tags) and turns modules on and off
+   * or configures them. Content entries use content:*, like pages.
+   */
+  "site",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -59,7 +66,7 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   organization_owner: new Set(ALL),
   store_admin: new Set(ALL.filter((p) => !p.startsWith("organization:"))),
   catalog_manager: new Set<Permission>([
-    ...read("store", "storefront", "analytics", "karmatik", "ai_actions", "integrations"),
+    ...read("store", "site", "storefront", "analytics", "karmatik", "ai_actions", "integrations"),
     ...write("catalog", "inventory", "pricing", "content", "media"),
     "ai_actions:write",
   ]),
@@ -70,7 +77,7 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "ai_actions:write",
   ]),
   marketing_manager: new Set<Permission>([
-    ...read("store", "catalog", "customers", "analytics", "karmatik", "yanit", "ai_actions", "tracking"),
+    ...read("store", "site", "catalog", "customers", "analytics", "karmatik", "yanit", "ai_actions", "tracking"),
     ...write("campaigns", "marketing", "content", "storefront", "media"),
     "tracking:manage",
     "storefront:publish",
@@ -79,10 +86,10 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "ai_actions:write",
   ]),
   analyst: new Set<Permission>(
-    read("store", "catalog", "inventory", "pricing", "orders", "customers", "campaigns", "marketing", "analytics", "karmatik", "yanit", "storefront", "content", "ai_actions", "integrations"),
+    read("store", "site", "catalog", "inventory", "pricing", "orders", "customers", "campaigns", "marketing", "analytics", "karmatik", "yanit", "storefront", "content", "ai_actions", "integrations"),
   ),
   developer: new Set<Permission>([
-    ...read("store", "catalog", "orders", "storefront", "audit", "ai_actions", "settings", "integrations"),
+    ...read("store", "site", "catalog", "orders", "storefront", "content", "audit", "ai_actions", "settings", "integrations"),
     "developer:read",
     "developer:write",
     "developer:manage",

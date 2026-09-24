@@ -3,10 +3,13 @@ import { AppError, assertStoreLocales, conflict, invalid, isValidSlug, newId, no
 import {
   and,
   asc,
+  contentEntries,
+  contentTypes,
   desc,
   eq,
   inArray,
   navigations,
+  ne,
   notInArray,
   pgTimestamp,
   pages,
@@ -14,6 +17,7 @@ import {
   publications,
   recordTombstone,
   redirects,
+  siteProfiles,
   slugHistory,
   sql,
   storefrontState,
@@ -33,11 +37,14 @@ import {
 import { recordAudit } from "@altyapi/audit";
 import { appendEvent } from "@altyapi/events";
 import { setAssetReferences } from "@altyapi/storage";
-import { assertCan, type StoreContext } from "@altyapi/tenancy";
-import { defaultGlobalSections, defaultNavigations, defaultPages } from "./defaults";
-import type { PageTypeName } from "./sections/definitions";
+import { assertCan, assertModule, type SiteModuleHooks, type SiteModuleHookTarget, type StoreContext } from "@altyapi/tenancy";
+import { isSameSitePath, type ContentTypeHooks, type ContentTypeHookTarget } from "@altyapi/content";
+import type { ModuleKey, PageUrlStyle, SiteKind } from "@altyapi/site";
+import { defaultGlobalSections, defaultModulePage, defaultNavigations, defaultPages, defaultTemplateContent, modulePageTypesFor } from "./defaults";
+import { entryTemplateKey, placementOfPage, sectionPolicyFor, type PageTypeName } from "./sections/types";
 import { themeSettingsSchema } from "./theme-settings";
-import { collectAssetIds, localizedTextMaps, pageContentInputSchema, validatePageContent } from "./validation";
+import { collectAssetIds, localizedTextMaps, pageContentInputSchema, templateModule, validatePageContent } from "./validation";
+import { pagePath } from "./render/routes";
 import { LOCALES } from "./sections/primitives";
 import { ensureBaseline, navigationSnapshot, nextRevisionNumber, pageSnapshot, recordRevision, themeSnapshot, type RevisionMeta } from "./history";
 import { assertHandleFree, assertLiveHandlesFree, isRoutablePageType } from "./handles";
@@ -48,11 +55,16 @@ const scopeOf = (ctx: StoreContext): Scope => ({ organizationId: ctx.organizatio
 export type PageRow = typeof pages.$inferSelect;
 export type PublicationRow = typeof publications.$inferSelect;
 
-/** Public URL path of routable page types. */
-export function pagePath(type: string, handle: string): string | null {
-  if (type === "home") return "/";
-  if (type === "page" || type === "landing") return `/pages/${handle}`;
-  return null;
+/** How the store serves its pages (/pages/{handle} or /{handle}). */
+async function pageUrlStyleTx(tx: Transaction, storeId: string): Promise<PageUrlStyle> {
+  const [profile] = await tx.select({ style: siteProfiles.pageUrlStyle }).from(siteProfiles).where(eq(siteProfiles.storeId, storeId));
+  return profile?.style ?? "prefixed";
+}
+
+/** The store's page URL style (site_profiles.page_url_style), for callers that build page paths. */
+export async function pageUrlStyle(db: Database, ctx: StoreContext): Promise<PageUrlStyle> {
+  assertCan(ctx, "storefront:read");
+  return withTenantTx(db, scopeOf(ctx), (tx) => pageUrlStyleTx(tx, ctx.storeId));
 }
 
 function contentIssues(issues: { path: string; message: string }[]): never {
@@ -64,49 +76,152 @@ function contentIssues(issues: { path: string; message: string }[]): never {
 // ---------------------------------------------------------------------------
 
 /**
- * Creates the default theme, template pages, menus and the first publication for a new
- * store. Idempotent: a store that already has storefront state is left unchanged.
+ * Creates the default theme, pages, menus and the first publication for a new store, laid out
+ * for its site-kind preset (defaults.ts): the shop layout for online stores, home, about,
+ * contact and legal pages without any cart for static, corporate and service sites.
+ * Idempotent: a store that already has storefront state is left unchanged.
  */
-export async function bootstrapStorefront(tx: Transaction, scope: Scope & { storeName: string; principalId: string | null }): Promise<void> {
+export async function bootstrapStorefront(
+  tx: Transaction,
+  scope: Scope & { storeName: string; principalId: string | null; preset?: SiteKind | undefined },
+): Promise<void> {
   const existing = await tx.query.storefrontState.findFirst({ where: eq(storefrontState.storeId, scope.storeId) });
   if (existing) return;
+  const preset = scope.preset ?? "ecommerce";
+  const tenant = { organizationId: scope.organizationId, storeId: scope.storeId };
 
   const themeId = newId();
   await tx.insert(themes).values({
     id: themeId,
-    organizationId: scope.organizationId,
-    storeId: scope.storeId,
+    ...tenant,
     name: "Varsayılan tema",
     status: "active",
     draftSettings: themeSettingsSchema.parse({}),
-    draftGlobalSections: defaultGlobalSections(),
+    draftGlobalSections: defaultGlobalSections(preset),
   });
-  for (const p of defaultPages(scope.storeName)) {
-    await tx.insert(pages).values({
-      id: newId(),
-      organizationId: scope.organizationId,
-      storeId: scope.storeId,
-      type: p.type,
-      handle: p.handle,
-      title: p.title,
-      draftContent: p.content,
-      status: "draft",
-    });
+  const pageIds: Record<string, string> = {};
+  const publishIds: string[] = [];
+  for (const p of defaultPages(scope.storeName, preset)) {
+    const id = newId();
+    await tx.insert(pages).values({ id, ...tenant, type: p.type, handle: p.handle, title: p.title, draftContent: p.content, status: "draft" });
+    pageIds[p.handle] = id;
+    if (p.publish) publishIds.push(id);
   }
-  for (const n of defaultNavigations()) {
-    await tx.insert(navigations).values({ id: newId(), organizationId: scope.organizationId, storeId: scope.storeId, ...n });
+  for (const n of defaultNavigations(preset, pageIds)) {
+    await tx.insert(navigations).values({ id: newId(), ...tenant, ...n });
   }
-  await tx.insert(storefrontState).values({ storeId: scope.storeId, organizationId: scope.organizationId, activeThemeId: themeId });
+  await tx.insert(storefrontState).values({ ...tenant, activeThemeId: themeId });
   const created = await tx.query.themes.findFirst({ where: eq(themes.id, themeId) });
-  await recordRevision(tx, scope, { type: "theme", id: themeId, revision: 1, parent: null, snapshot: themeSnapshot(created!), meta: { source: "bootstrap" } });
+  await recordRevision(tx, tenant, { type: "theme", id: themeId, revision: 1, parent: null, snapshot: themeSnapshot(created!), meta: { source: "bootstrap" } });
   for (const p of await tx.select().from(pages).where(eq(pages.storeId, scope.storeId))) {
-    await recordRevision(tx, scope, { type: "page", id: p.id, revision: p.draftRevision, parent: null, snapshot: pageSnapshot(p), meta: { source: "bootstrap" } });
+    await recordRevision(tx, tenant, { type: "page", id: p.id, revision: p.draftRevision, parent: null, snapshot: pageSnapshot(p), meta: { source: "bootstrap" } });
   }
   for (const n of await tx.select().from(navigations).where(eq(navigations.storeId, scope.storeId))) {
-    await recordRevision(tx, scope, { type: "navigation", id: n.id, revision: n.revision, parent: null, snapshot: navigationSnapshot(n), meta: { source: "bootstrap" } });
+    await recordRevision(tx, tenant, { type: "navigation", id: n.id, revision: n.revision, parent: null, snapshot: navigationSnapshot(n), meta: { source: "bootstrap" } });
   }
-  await publishCore(tx, scope, { includeTheme: true, pageIds: "all", reason: "initial", principalId: scope.principalId });
+  await publishCore(tx, tenant, { includeTheme: true, pageIds: publishIds, reason: "initial", principalId: scope.principalId });
 }
+
+// ---------------------------------------------------------------------------
+// Content type templates
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the draft template pages of a routable content type (plan §5): the detail layout
+ * (entries.<key>.detail, with entry-main) and, for collections, the index layout
+ * (entries.<key>.index, with entry-index-main). Existing template pages are left alone, so it
+ * is safe to call again (a reinstalled type, prefixes added later). Until the merchant
+ * publishes a template, entries render with the same default layout.
+ */
+export async function ensureEntryTemplatePages(tx: Transaction, type: ContentTypeHookTarget): Promise<string[]> {
+  if (type.kind === "taxonomy") return [];
+  const kinds: ("detail" | "index")[] = type.kind === "collection" ? ["detail", "index"] : ["detail"];
+  const scope = { organizationId: type.organizationId, storeId: type.storeId };
+  const created: string[] = [];
+  for (const kind of kinds) {
+    const templateKey = entryTemplateKey(type.key, kind);
+    const [existing] = await tx.select({ id: pages.id }).from(pages).where(and(eq(pages.storeId, type.storeId), eq(pages.templateKey, templateKey)));
+    if (existing) continue;
+    const content = defaultTemplateContent(templateKey);
+    if (!content) continue;
+    const labels = kind === "detail" ? type.labels.name : type.labels.namePlural;
+    const [row] = await tx
+      .insert(pages)
+      .values({ id: newId(), ...scope, type: "template", handle: templateKey, templateKey, title: labels, draftContent: content, status: "draft" })
+      .returning();
+    await recordRevision(tx, scope, { type: "page", id: row!.id, revision: row!.draftRevision, parent: null, snapshot: pageSnapshot(row!), meta: { source: "content_type_install" } });
+    await recordAudit(tx, {
+      ...scope,
+      action: "page.created",
+      resourceType: "page",
+      resourceId: row!.id,
+      after: { type: "template", templateKey, contentTypeId: type.typeId, source: "content_type_install" },
+    });
+    created.push(row!.id);
+  }
+  return created;
+}
+
+/**
+ * Hooks to pass to the content type services (installType, createCustomType, updateType):
+ * a type that has routes gets its draft template pages in the same transaction.
+ */
+export const entryTemplateHooks: ContentTypeHooks = {
+  onInstalled: async (tx, type) => {
+    if (type.routable) await ensureEntryTemplatePages(tx, type);
+  },
+  onRoutable: async (tx, type) => {
+    await ensureEntryTemplatePages(tx, type);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Module pages
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the missing pages a store's active modules render their routes with (product and
+ * collection pages for the catalog, the cart for commerce, search and not-found for the core),
+ * as drafts with the default layout: a site set up without a module gets them when the module
+ * is turned on. Until the merchant publishes them, the routes render the same default layout
+ * (resolveRoute). Existing pages are left alone; a store whose storefront is not set up yet
+ * gets its pages from bootstrapStorefront instead. Returns the ids of the pages created.
+ */
+export async function ensureModulePages(tx: Transaction, target: SiteModuleHookTarget): Promise<string[]> {
+  const state = await tx.query.storefrontState.findFirst({ where: eq(storefrontState.storeId, target.storeId) });
+  if (!state) return [];
+  const scope = { organizationId: target.organizationId, storeId: target.storeId };
+  const created: string[] = [];
+  for (const type of modulePageTypesFor(target.activeModules)) {
+    const [existing] = await tx
+      .select({ id: pages.id })
+      .from(pages)
+      .where(and(eq(pages.storeId, target.storeId), eq(pages.type, type), eq(pages.handle, "default")));
+    if (existing) continue;
+    const page = defaultModulePage(type);
+    const [row] = await tx
+      .insert(pages)
+      .values({ id: newId(), ...scope, type, handle: page.handle, title: page.title, draftContent: page.content, status: "draft" })
+      .returning();
+    await recordRevision(tx, scope, { type: "page", id: row!.id, revision: row!.draftRevision, parent: null, snapshot: pageSnapshot(row!), meta: { source: "module_enable" } });
+    await recordAudit(tx, {
+      ...scope,
+      action: "page.created",
+      resourceType: "page",
+      resourceId: row!.id,
+      after: { type, handle: page.handle, source: "module_enable", modules: target.activated },
+    });
+    created.push(row!.id);
+  }
+  return created;
+}
+
+/** Hooks to pass to the site module services (enableModule): a module turned on gets its pages in the same transaction. */
+export const modulePageHooks: SiteModuleHooks = {
+  onActivated: async (tx, target) => {
+    await ensureModulePages(tx, target);
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Publishing core
@@ -331,11 +446,12 @@ async function redirectMovedPages(tx: Transaction, scope: Scope, before: Record<
     .from(pageVersions)
     .where(inArray(pageVersions.id, moved.flatMap(([pageId, versionId]) => [before[pageId]!, versionId])));
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const style = await pageUrlStyleTx(tx, scope.storeId);
   for (const [pageId, versionId] of moved) {
     const previous = byId.get(before[pageId]!);
     const next = byId.get(versionId);
-    const oldPath = previous ? pagePath(previous.type, previous.handle) : null;
-    const newPath = next ? pagePath(next.type, next.handle) : null;
+    const oldPath = previous ? pagePath(previous.type, previous.handle, style) : null;
+    const newPath = next ? pagePath(next.type, next.handle, style) : null;
     if (!oldPath || !newPath || oldPath === newPath) continue;
     await upsertRedirect(tx, scope, oldPath, newPath, 301, "slug_change");
     await tx
@@ -393,7 +509,7 @@ export async function updateThemeDraft(db: Database, ctx: StoreContext, input: z
   const settings = input.settings === undefined ? undefined : themeSettingsSchema.parse(input.settings);
   let globalSections: PageContent | undefined;
   if (input.globalSections) {
-    const v = validatePageContent(input.globalSections, "global");
+    const v = validatePageContent(input.globalSections, "global", sectionPolicyFor(ctx.store));
     if (!v.ok) contentIssues(v.issues);
     globalSections = v.content;
   }
@@ -444,7 +560,8 @@ const seoSchema = z.object({
   description: z.partialRecord(z.enum(LOCALES), z.string().max(320)).optional(),
   imageAssetId: z.uuid().nullable().optional(),
   noindex: z.boolean().optional(),
-  canonicalPath: z.string().startsWith("/").max(500).nullable().optional(),
+  /** A path on this site (never another host), localized per language when rendered. */
+  canonicalPath: z.string().trim().max(500).refine(isSameSitePath, "errors.page.invalid_canonical_path").nullable().optional(),
 });
 
 export const createPageSchema = z.object({
@@ -559,9 +676,10 @@ export async function livePagePaths(db: Database, ctx: StoreContext, pageIds: st
       .select({ pageId: pageVersions.pageId, type: pageVersions.type, handle: pageVersions.handle })
       .from(pageVersions)
       .where(inArray(pageVersions.id, versionIds));
+    const style = await pageUrlStyleTx(tx, ctx.storeId);
     return new Map(
       rows.flatMap((r) => {
-        const path = pagePath(r.type, r.handle);
+        const path = pagePath(r.type, r.handle, style);
         return path ? [[r.pageId, path] as const] : [];
       }),
     );
@@ -579,7 +697,7 @@ export async function createPage(
   const handle = input.handle ?? slugify(Object.values(input.title).find(Boolean) ?? "sayfa");
   let content: PageContent = { sections: [] };
   if (input.content) {
-    const v = validatePageContent(input.content, input.type);
+    const v = validatePageContent(input.content, input.type, sectionPolicyFor(ctx.store));
     if (!v.ok) contentIssues(v.issues);
     content = v.content;
     assertContentLocales(ctx, content);
@@ -631,9 +749,13 @@ export async function updatePageDraft(db: Database, ctx: StoreContext, pageId: s
   if (input.handle !== undefined && page.type !== "page" && page.type !== "landing") {
     throw invalid("errors.page.handle_not_editable");
   }
+  const placement = placementOfPage(page);
+  // A module's template (entries.post.detail) is edited only while its module is on.
+  const owner = templateModule(placement);
+  if (owner) assertModule(ctx, owner as ModuleKey);
   let content: PageContent | undefined;
   if (input.content) {
-    const v = validatePageContent(input.content, page.type);
+    const v = validatePageContent(input.content, placement, sectionPolicyFor(ctx.store));
     if (!v.ok) contentIssues(v.issues);
     content = v.content;
     assertContentLocales(ctx, content, page.draftContent);
@@ -837,6 +959,10 @@ const navLinkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("page"), pageId: z.uuid() }),
   z.object({ type: z.literal("collection"), collectionId: z.uuid() }),
   z.object({ type: z.literal("product"), productId: z.uuid() }),
+  /** A content entry: rendered with its live path in each language, hidden while it is not live. */
+  z.object({ type: z.literal("entry"), entryId: z.uuid() }),
+  /** The index route of a content type (/hizmetler, /en/services), hidden while the type has none. */
+  z.object({ type: z.literal("entry_index"), typeId: z.uuid() }),
   z.object({ type: z.enum(["home", "search", "cart"]) }),
 ]);
 
@@ -864,6 +990,38 @@ function navLabels(items: { label: Record<string, unknown>; children?: unknown[]
   ]);
 }
 
+/** Links of a menu tree, depth first. */
+function navLinks(items: readonly NavigationItem[]): NavigationItem["link"][] {
+  return items.flatMap((i) => [i.link, ...navLinks(i.children ?? [])]);
+}
+
+/**
+ * Entry and content type links must point at records of this store: an entry that is not
+ * archived, a type that is active. Whether they are live is decided when the menu renders
+ * (an unpublished entry's link is hidden until it goes live).
+ */
+async function assertNavTargets(tx: Transaction, storeId: string, items: readonly NavigationItem[]): Promise<void> {
+  const links = navLinks(items);
+  const entryIds = [...new Set(links.flatMap((l) => (l.type === "entry" ? [l.entryId] : [])))];
+  const typeIds = [...new Set(links.flatMap((l) => (l.type === "entry_index" ? [l.typeId] : [])))];
+  if (entryIds.length) {
+    const found = await tx
+      .select({ id: contentEntries.id })
+      .from(contentEntries)
+      .where(and(eq(contentEntries.storeId, storeId), inArray(contentEntries.id, entryIds), ne(contentEntries.status, "archived")));
+    const missing = entryIds.filter((id) => !found.some((f) => f.id === id));
+    if (missing.length) throw invalid("errors.navigation.entry_not_found", { entryIds: missing });
+  }
+  if (typeIds.length) {
+    const found = await tx
+      .select({ id: contentTypes.id })
+      .from(contentTypes)
+      .where(and(eq(contentTypes.storeId, storeId), inArray(contentTypes.id, typeIds), eq(contentTypes.status, "active")));
+    const missing = typeIds.filter((id) => !found.some((f) => f.id === id));
+    if (missing.length) throw invalid("errors.navigation.content_type_not_found", { typeIds: missing });
+  }
+}
+
 function normalizeNav(items: NavInput[], depth = 1): NavigationItem[] {
   if (depth > 3) throw invalid("errors.navigation.too_deep");
   return items.map((i) => ({
@@ -887,6 +1045,7 @@ export async function upsertNavigation(db: Database, ctx: StoreContext, handle: 
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
     const existing = await tx.query.navigations.findFirst({ where: and(eq(navigations.storeId, ctx.storeId), eq(navigations.handle, handle)) });
     assertLocalizedMaps(ctx, navLabels(items), textPairs(navLabels(existing?.items ?? []).map((l) => l.map)));
+    await assertNavTargets(tx, ctx.storeId, items);
     let row: typeof navigations.$inferSelect;
     if (existing) {
       await ensureBaseline(tx, scopeOf(ctx), "navigation", existing.id, existing.revision, navigationSnapshot(existing));

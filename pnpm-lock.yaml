@@ -38,6 +38,9 @@ importers:
       '@altyapi/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@altyapi/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@altyapi/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -74,6 +77,9 @@ importers:
       '@altyapi/secrets':
         specifier: workspace:*
         version: link:../../packages/secrets
+      '@altyapi/site':
+        specifier: workspace:*
+        version: link:../../packages/site
       '@altyapi/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -144,6 +150,9 @@ importers:
       '@altyapi/commerce-core':
         specifier: workspace:*
         version: link:../../packages/commerce-core
+      '@altyapi/site':
+        specifier: workspace:*
+        version: link:../../packages/site
       next:
         specifier: ^16.3.6
         version: 16.3.6(@opentelemetry/api@1.9.1)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -202,6 +211,9 @@ importers:
       '@altyapi/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@altyapi/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@altyapi/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -410,9 +422,39 @@ importers:
 
   packages/content:
     dependencies:
+      '@altyapi/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@altyapi/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@altyapi/commerce-core':
         specifier: workspace:*
         version: link:../commerce-core
+      '@altyapi/database':
+        specifier: workspace:*
+        version: link:../database
+      '@altyapi/events':
+        specifier: workspace:*
+        version: link:../events
+      '@altyapi/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@altyapi/site':
+        specifier: workspace:*
+        version: link:../site
+      '@altyapi/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@altyapi/tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      domhandler:
+        specifier: ^6.0.1
+        version: 6.0.1
+      htmlparser2:
+        specifier: ^12.0.0
+        version: 12.0.0
       sanitize-html:
         specifier: ^2.17.7
         version: 2.17.7
@@ -484,6 +526,9 @@ importers:
       '@altyapi/commerce-core':
         specifier: workspace:*
         version: link:../commerce-core
+      '@altyapi/content':
+        specifier: workspace:*
+        version: link:../content
       '@altyapi/database':
         specifier: workspace:*
         version: link:../database
@@ -752,6 +797,24 @@ importers:
         specifier: ^3.1139.0
         version: 3.1139.0
 
+  packages/site:
+    dependencies:
+      '@altyapi/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@altyapi/commerce-core':
+        specifier: workspace:*
+        version: link:../commerce-core
+      '@altyapi/database':
+        specifier: workspace:*
+        version: link:../database
+      '@altyapi/events':
+        specifier: workspace:*
+        version: link:../events
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
   packages/storage:
     dependencies:
       '@altyapi/audit':
@@ -811,6 +874,9 @@ importers:
       '@altyapi/observability':
         specifier: workspace:*
         version: link:../observability
+      '@altyapi/site':
+        specifier: workspace:*
+        version: link:../site
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -841,6 +907,9 @@ importers:
       '@altyapi/observability':
         specifier: workspace:*
         version: link:../observability
+      '@altyapi/site':
+        specifier: workspace:*
+        version: link:../site
       '@altyapi/storage':
         specifier: workspace:*
         version: link:../storage

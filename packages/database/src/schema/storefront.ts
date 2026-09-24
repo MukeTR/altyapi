@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgEnum, pgTable, smallint, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, pgEnum, pgTable, smallint, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { timestamps, tstz } from "./_shared";
 import { stores } from "./tenancy";
 
@@ -104,6 +104,8 @@ export const pageType = pgEnum("page_type", [
   "cart",
   "search",
   "not_found",
+  /** Layout for module and content routes, addressed by pages.template_key (K8). */
+  "template",
 ]);
 
 export const pageStatus = pgEnum("page_status", ["draft", "published", "scheduled", "unpublished"]);
@@ -117,8 +119,16 @@ export const pages = pgTable(
       .notNull()
       .references(() => stores.id, { onDelete: "cascade" }),
     type: pageType().notNull(),
-    /** URL handle for page/landing types; template types use a fixed handle ("default"). */
+    /**
+     * URL handle for page/landing types; product/collection/… layouts use a fixed handle
+     * ("default"); template pages use their template_key as handle.
+     */
     handle: text().notNull(),
+    /**
+     * Placement a template page lays out ("entries.post.detail", "entries.post.index",
+     * "services.detail", "booking.flow"); set exactly when type = 'template'.
+     */
+    templateKey: text(),
     title: jsonb().$type<LocalizedText>().notNull(),
     status: pageStatus().notNull().default("draft"),
     draftContent: jsonb().$type<PageContent>().notNull().default({ sections: [] }),
@@ -134,6 +144,11 @@ export const pages = pgTable(
   (t) => [
     uniqueIndex("pages_store_type_handle_uq").on(t.storeId, t.type, t.handle),
     index("pages_schedule_idx").on(t.publishAt).where(sql`${t.status} = 'scheduled'`),
+    uniqueIndex("pages_store_template_key_uq").on(t.storeId, t.templateKey).where(sql`${t.templateKey} is not null`),
+    // The enum is compared as text: 'template' was added to page_type in the same migration
+    // transaction, and a new enum value cannot be used before that transaction commits.
+    check("pages_template_key_type", sql`(${t.type}::text = 'template') = (${t.templateKey} is not null)`),
+    check("pages_template_key_handle", sql`${t.templateKey} is null or ${t.handle} = ${t.templateKey}`),
   ],
 );
 
@@ -176,8 +191,15 @@ export const sectionDefinitions = pgTable(
     blockSchemas: jsonb().$type<Record<string, unknown>>().notNull().default({}),
     defaults: jsonb().$type<Record<string, unknown>>().notNull().default({}),
     contentBindings: jsonb().$type<string[]>().notNull().default([]),
+    /** Placements: page types, "global" and template placements ("tpl:entries.{type}.detail"). */
     allowedPageTypes: jsonb().$type<string[]>().notNull().default([]),
     renderer: text().notNull(),
+    /** Capability module the section belongs to (a site_modules key; core for layout and generic content). */
+    module: text().notNull().default("core"),
+    /** Site policy tags (K7): what the section does; rule packs block sections by tag (section.block_tag). */
+    policyTags: text().array().notNull().default(sql`ARRAY[]::text[]`),
+    /** Tags that apply while a prop holds a value: { "couponCode": ["discount"] }. */
+    propTags: jsonb().$type<Record<string, string[]>>().notNull().default({}),
     ...timestamps,
   },
   (t) => [
@@ -188,11 +210,19 @@ export const sectionDefinitions = pgTable(
 export interface NavigationItem {
   id: string;
   label: LocalizedText;
+  /**
+   * Record links resolve per language when the menu renders: entry to the entry's live path
+   * (its own slug and the type's prefix in that language), entry_index to the index route of a
+   * content type (/hizmetler, /en/services). A url link keeps one path for every language, so
+   * it cannot follow per-language prefixes and slugs.
+   */
   link:
     | { type: "url"; url: string }
     | { type: "page"; pageId: string }
     | { type: "collection"; collectionId: string }
     | { type: "product"; productId: string }
+    | { type: "entry"; entryId: string }
+    | { type: "entry_index"; typeId: string }
     | { type: "home" | "search" | "cart" };
   children?: NavigationItem[];
 }
@@ -251,6 +281,14 @@ export const storefrontState = pgTable("storefront_state", {
   updatedAt: tstz().notNull().defaultNow(),
 });
 
+/** exact: only from_path itself; prefix: from_path and everything below it (the rest of the path is carried over). */
+export const redirectMatchType = pgEnum("redirect_match_type", ["exact", "prefix"]);
+
+/**
+ * Storefront redirects. Exact rules win over prefix rules, and the longest prefix wins among
+ * prefix rules. Status 410 (Gone) answers that the path was removed on purpose; it has no
+ * target.
+ */
 export const redirects = pgTable(
   "redirects",
   {
@@ -260,12 +298,18 @@ export const redirects = pgTable(
       .notNull()
       .references(() => stores.id, { onDelete: "cascade" }),
     fromPath: text().notNull(),
-    toPath: text().notNull(),
+    /** Target path or URL; null exactly when status_code is 410. */
+    toPath: text(),
     statusCode: smallint().notNull().default(301),
+    matchType: redirectMatchType().notNull().default("exact"),
     source: text().notNull().default("manual"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("redirects_store_from_uq").on(t.storeId, t.fromPath)],
+  (t) => [
+    uniqueIndex("redirects_store_from_uq").on(t.storeId, t.fromPath),
+    check("redirects_status_code", sql`${t.statusCode} in (301, 302, 410)`),
+    check("redirects_gone_has_no_target", sql`(${t.statusCode} = 410) = (${t.toPath} is null)`),
+  ],
 );
 
 /** Previous handles of products, collections and pages; used for SEO-safe 301s. */

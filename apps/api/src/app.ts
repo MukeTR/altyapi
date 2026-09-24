@@ -25,6 +25,8 @@ import { createDomainDeps } from "@altyapi/domains";
 import { createR2Storage } from "@altyapi/storage";
 import { assetRoutes } from "./modules/assets";
 import { storefrontRoutes } from "./modules/storefront";
+import { siteRoutes } from "./modules/site";
+import { contentRoutes } from "./modules/content";
 import { catalogRoutes } from "./modules/catalog";
 import { importRoutes } from "./modules/imports";
 import { storefrontApiRoutes } from "./modules/storefront-api";
@@ -113,6 +115,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(domainRoutes, { deps, domainDeps });
   await app.register(assetRoutes, { deps, r2: createR2Storage(deps.env) });
   await app.register(storefrontRoutes, { deps });
+  await app.register(siteRoutes, { deps });
+  await app.register(contentRoutes, { deps });
   await app.register(catalogRoutes, { deps });
   await app.register(importRoutes, { deps, queue: deps.queue });
   await app.register(storefrontApiRoutes, { deps });

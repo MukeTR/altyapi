@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { getSite } from "@/lib/site";
+import { moduleOn } from "@/components/context";
 import { t } from "@/lib/i18n";
 import { CheckoutFlow } from "@/components/client/checkout";
 
@@ -11,6 +13,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function CheckoutPage() {
   const { site } = await getSite();
+  // Checkout exists only on sites that sell (commerce module).
+  if (!moduleOn(site, "commerce")) notFound();
   return (
     <div className="container-theme py-10">
       <CheckoutFlow locale={site.locale} mediaBase={site.mediaBaseUrl} />

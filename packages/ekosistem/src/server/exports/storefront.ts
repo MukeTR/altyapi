@@ -1,5 +1,6 @@
 import type { Database, LocalizedText, SectionInstance } from "@altyapi/database";
 import { loadLiveSnapshot, resolvePage, type StorefrontSnapshot } from "@altyapi/theme-engine";
+import { toPlainText, type RichDoc } from "@altyapi/content";
 import { stripHtml } from "@altyapi/catalog";
 
 /**
@@ -44,6 +45,16 @@ function isLocalizedMap(value: unknown): value is LocalizedText {
   return entries.length > 0 && entries.every(([k, v]) => /^[a-z]{2}$/.test(k) && typeof v === "string");
 }
 
+const isRichDoc = (v: unknown): v is RichDoc => !!v && typeof v === "object" && (v as { type?: unknown }).type === "doc" && Array.isArray((v as { content?: unknown }).content);
+
+/** A localized richDoc map (rich-text@2, faq@2 answers) as localized plain text. */
+function richDocText(value: unknown): LocalizedText | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.length || !entries.every(([k, v]) => /^[a-z]{2}$/.test(k) && isRichDoc(v))) return null;
+  return Object.fromEntries(entries.map(([k, v]) => [k, toPlainText(v as RichDoc)]));
+}
+
 /** Section props that carry page text (see packages/theme-engine/src/sections/definitions.ts). */
 const TEXT_PROPS = new Set(["heading", "subheading", "title", "body", "text", "description", "quote", "question", "answer", "caption"]);
 
@@ -57,8 +68,10 @@ export function sectionsExcerpt(sections: SectionInstance[], locale: string, fal
   let length = 0;
   const take = (props: Record<string, unknown>) => {
     for (const [key, value] of Object.entries(props)) {
-      if (length > max * 2 || !TEXT_PROPS.has(key) || !isLocalizedMap(value)) continue;
-      const text = pickLocalized(value, locale, fallback);
+      if (length > max * 2 || !TEXT_PROPS.has(key)) continue;
+      const map = isLocalizedMap(value) ? value : richDocText(value);
+      if (!map) continue;
+      const text = pickLocalized(map, locale, fallback);
       if (!text) continue;
       parts.push(text);
       length += text.length + 1;
@@ -77,7 +90,10 @@ export function sectionJsonLdTypes(sections: SectionInstance[], now: Date): stri
   const types = new Set<string>();
   for (const s of sections) {
     if (!isRendered(s, now)) continue;
-    if (s.type === "faq" && (s.props as Record<string, unknown>).emitStructuredData !== false && (s.blocks ?? []).some((b) => b.type === "item")) types.add("FAQPage");
+    const props = s.props as Record<string, unknown>;
+    // faq@2 may list FAQ entries instead of inline items.
+    const hasItems = (s.blocks ?? []).some((b) => b.type === "item") || (s.version >= 2 && props.source === "entries" && Array.isArray(props.entryIds) && props.entryIds.length > 0);
+    if (s.type === "faq" && props.emitStructuredData !== false && hasItems) types.add("FAQPage");
   }
   return [...types];
 }

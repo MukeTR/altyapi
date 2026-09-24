@@ -120,6 +120,27 @@
       "when": 1790271979891,
       "tag": "0016_price_history",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790278612064,
+      "tag": "0017_faz1_site_content",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790283527738,
+      "tag": "0018_faz1_section_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790290629969,
+      "tag": "0019_faz1_review_fixes",
+      "breakpoints": true
     }
   ]
 }

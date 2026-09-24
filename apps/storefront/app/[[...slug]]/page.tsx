@@ -43,6 +43,8 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   // hreflang is emitted only for a real set of translations.
   const languages = Object.keys(route.alternates);
   const xDefault = route.alternates[site.defaultLocale];
+  // An untranslated entry served in the default language (noindex) is content in that language.
+  const contentLocale = route.entry?.fallback ? route.entry.locale : route.locale;
   return {
     title: route.kind === "home" ? { absolute: route.seo.title } : route.seo.title,
     description: route.seo.description || undefined,
@@ -55,13 +57,20 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
       description: route.seo.description || undefined,
       url: route.canonicalPath,
       siteName: site.name,
-      locale: ogLocale(route.locale),
-      alternateLocale: languages.filter((l) => l !== route.locale).map(ogLocale),
-      type: "website",
+      locale: ogLocale(contentLocale),
+      alternateLocale: languages.filter((l) => l !== contentLocale).map(ogLocale),
+      // Content entries are articles with their publish and last significant update dates.
+      ...(route.seo.ogType === "article"
+        ? {
+            type: "article" as const,
+            ...(route.seo.publishedAt ? { publishedTime: route.seo.publishedAt } : {}),
+            ...(route.seo.modifiedAt ? { modifiedTime: route.seo.modifiedAt } : {}),
+          }
+        : { type: "website" as const }),
       ...(image ? { images: [{ url: image, width: 1200, height: 630, alt: route.seo.title }] } : {}),
     },
     ...(image ? { twitter: { card: "summary_large_image", images: [image] } } : {}),
-    ...(route.seo.noindex || route.status === 404 ? { robots: { index: false, follow: true } } : {}),
+    ...(route.seo.noindex || route.status === 404 || route.status === 410 ? { robots: { index: false, follow: true } } : {}),
   };
 }
 
@@ -72,7 +81,10 @@ export default async function Page(props: Props) {
     if (route.status === 302) redirect(route.redirectTo);
     permanentRedirect(route.redirectTo);
   }
-  if (route.status === 404) notFound();
+  // A removed path (410) is answered with status 410 by the proxy before the page renders
+  // (lib/gone.ts renders this not-found page for it). App Router pages can only answer
+  // not-found with 404, which is what client-side navigation to such a path gets; noindex either way.
+  if (route.status === 404 || route.status === 410) notFound();
   const ctx = renderCtx(site, route, sp);
   const origin = site.canonicalHost ? `https://${site.canonicalHost}` : "";
   return (

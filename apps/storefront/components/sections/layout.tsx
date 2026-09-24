@@ -1,7 +1,7 @@
 import type { RenderSection, ResolvedLink } from "@altyapi/theme-engine";
 import { mediaUrl } from "@/lib/media";
 import { htmlAttributes, localeName, t } from "@/lib/i18n";
-import { L, P, type RenderCtx } from "../context";
+import { L, P, moduleOn, type RenderCtx } from "../context";
 import { AnnouncementBar } from "../client/announcement-bar";
 import { MobileMenu } from "../client/mobile-menu";
 import { Popup } from "../client/popup";
@@ -109,7 +109,7 @@ export function Header({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
               ))}
             </nav>
           )}
-          <CartButton label={t(ctx.locale, "cart")} locale={ctx.locale} />
+          {p.showCart !== false && moduleOn(ctx.site, "commerce") && <CartButton label={t(ctx.locale, "cart")} locale={ctx.locale} />}
         </div>
       </div>
       {p.layout === "logo-center" && (
@@ -176,7 +176,7 @@ export function Footer({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
         <p>
           © {new Date().getUTCFullYear()} {ctx.site.name}
         </p>
-        {Boolean(p.showPaymentIcons) && <p aria-label={t(ctx.locale, "paymentMethods")}>VISA · Mastercard · Troy · American Express</p>}
+        {Boolean(p.showPaymentIcons) && moduleOn(ctx.site, "commerce") && <p aria-label={t(ctx.locale, "paymentMethods")}>VISA · Mastercard · Troy · American Express</p>}
       </div>
     </footer>
   );

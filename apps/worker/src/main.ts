@@ -12,6 +12,7 @@ import { integrationJobHandlers, integrationScheduledTasks } from "./handlers/in
 import { ekosistemEventHandlers, ekosistemJobHandlers, ekosistemScheduledTasks } from "./handlers/ekosistem";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
+import { runScheduledEntryPublishing } from "@altyapi/content";
 
 const deps = createWorkerDeps();
 const control: LoopControl = { stopped: false };
@@ -39,6 +40,7 @@ const loops = [
       { name: "edge.flush-content-versions", intervalMs: 5_000, run: () => flushEdgeContentVersions(deps) },
       { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
       { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db, deps.logger) },
+      { name: "content.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledEntryPublishing(deps.db, new Date(), deps.logger) },
       ...catalogScheduledTasks(deps),
       ...orderScheduledTasks(deps),
       ...integrationScheduledTasks(deps),

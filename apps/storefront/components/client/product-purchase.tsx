@@ -6,13 +6,17 @@ import { track } from "@/lib/client/track";
 import { ProductOptions } from "./product-options";
 import { AddToCart } from "./cart";
 
-/** Variant selection and purchase controls for the product page. */
+/**
+ * Variant selection and purchase controls for the product page. Without purchasable (a site
+ * whose commerce module is off, e.g. a corporate catalog) only the variant picker is shown.
+ */
 export function ProductPurchase({
   product,
   initialVariantId,
   picker,
   locale,
   labels,
+  purchasable,
 }: {
   product: ProductDetailDto;
   initialVariantId: string | null;
@@ -20,6 +24,7 @@ export function ProductPurchase({
   locale: string;
   currency: string;
   labels: { soldOut: string; lowStock: string; addToCart: string };
+  purchasable: boolean;
 }) {
   useEffect(() => {
     const variant = product.variants.find((v) => v.id === initialVariantId) ?? product.variants.find((v) => v.available) ?? product.variants[0];
@@ -35,7 +40,9 @@ export function ProductPurchase({
 
   return (
     <ProductOptions product={product} initialVariantId={initialVariantId} picker={picker} locale={locale} labels={labels}>
-      {(variant) => <AddToCart variantId={variant?.id ?? null} available={Boolean(variant?.available)} label={labels.addToCart} soldOutLabel={labels.soldOut} locale={locale} />}
+      {(variant) =>
+        purchasable ? <AddToCart variantId={variant?.id ?? null} available={Boolean(variant?.available)} label={labels.addToCart} soldOutLabel={labels.soldOut} locale={locale} /> : null
+      }
     </ProductOptions>
   );
 }

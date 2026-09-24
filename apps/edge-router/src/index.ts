@@ -24,7 +24,6 @@ interface RouteResolution {
 }
 
 const ISOLATE_TTL_MS = 30_000;
-const UNCACHEABLE = /^\/(?:[a-z]{2}\/)?(?:cart|checkout|account|api|search)(?:\/|$)/;
 const ORIGIN_FALLBACK_KV_TTL_S = 300;
 const isolateCache = new Map<string, { value: RouteResolution | null; expires: number }>();
 
@@ -98,13 +97,13 @@ export default {
     }
 
     // Versioned HTML cache: the key includes the store content version, so a publish makes
-    // old entries unreachable without purging. Personal pages and previews are never cached.
+    // old entries unreachable without purging. Which responses may be kept is the origin's
+    // decision: the storefront marks a route's HTML shareable (CDN-Cache-Control with a
+    // max-age) only when its cache class is public in the module route table; cart, checkout
+    // and other per-visitor routes never are, so they are never stored. Previews and
+    // authenticated requests bypass the cache entirely.
     const cookie = request.headers.get("cookie") ?? "";
-    const cacheable =
-      (request.method === "GET" || request.method === "HEAD") &&
-      !UNCACHEABLE.test(url.pathname) &&
-      !cookie.includes("altyapi_preview=") &&
-      !request.headers.has("authorization");
+    const cacheable = (request.method === "GET" || request.method === "HEAD") && !cookie.includes("altyapi_preview=") && !request.headers.has("authorization");
     const cacheKey = new Request(`https://edge-cache.altyapi.internal/${host}${url.pathname}${url.search}${url.search ? "&" : "?"}__cv=${route.contentVersion}`, { method: "GET" });
     if (cacheable) {
       const hit = await caches.default.match(cacheKey);
@@ -139,15 +138,18 @@ export default {
       body: request.method === "GET" || request.method === "HEAD" ? null : request.body,
       redirect: "manual",
     });
-    const cdn = upstream.headers.get("cdn-cache-control");
-    const maxAge = cdn ? Number(/max-age=(\d+)/.exec(cdn)?.[1] ?? 0) : 0;
-    if (cacheable && upstream.status === 200 && maxAge > 0 && !upstream.headers.has("set-cookie")) {
+    // CDN-Cache-Control is the storefront's shared-cache verdict (Cache-Control is the
+    // browser's and says no-store for every dynamic page).
+    const cdn = upstream.headers.get("cdn-cache-control") ?? "";
+    const maxAge = /\b(?:private|no-store)\b/i.test(cdn) ? 0 : Number(/max-age=(\d+)/.exec(cdn)?.[1] ?? 0);
+    const store = cacheable && upstream.status === 200 && maxAge > 0 && !upstream.headers.has("set-cookie");
+    if (store) {
       const toCache = new Response(upstream.clone().body, upstream);
       toCache.headers.set("cache-control", `public, max-age=${maxAge}`);
       ctx.waitUntil(caches.default.put(cacheKey, toCache));
     }
     const res = new Response(upstream.body, upstream);
-    res.headers.set("x-altyapi-cache", cacheable ? "MISS" : "BYPASS");
+    res.headers.set("x-altyapi-cache", store ? "MISS" : "BYPASS");
     return res;
   },
 } satisfies ExportedHandler<Env>;

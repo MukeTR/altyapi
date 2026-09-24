@@ -7,7 +7,6 @@ import {
   pages,
   pageVersions,
   publications,
-  redirects,
   sql,
   storefrontState,
   themes,
@@ -182,12 +181,6 @@ export async function listLivePages(db: Database, ref: TenantRef, snapshot: Stor
     }
     return rows.map((r) => ({ ...r, liveSince: since.get(r.pageId) ?? r.createdAt }));
   });
-}
-
-export async function findRedirect(db: Database, ref: TenantRef, path: string) {
-  return withTenantTx(db, ref, (tx) =>
-    tx.query.redirects.findFirst({ where: and(eq(redirects.storeId, ref.storeId), eq(redirects.fromPath, path)) }),
-  );
 }
 
 // ---------------------------------------------------------------------------

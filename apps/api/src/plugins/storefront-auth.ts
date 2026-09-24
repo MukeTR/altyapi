@@ -1,7 +1,9 @@
 import type { FastifyRequest } from "fastify";
 import { AppError } from "@altyapi/commerce-core";
 import { safeEqual } from "@altyapi/auth";
-import { eq, stores, withPlatformTx } from "@altyapi/database";
+import { eq, stores, withPlatformTx, withTenantTx } from "@altyapi/database";
+import { loadActiveModules } from "@altyapi/site";
+import { moduleDisabled } from "@altyapi/tenancy";
 import { resolveHostname } from "@altyapi/domains";
 import { enrichContext } from "@altyapi/observability";
 import { verifyPreviewToken } from "@altyapi/theme-engine";
@@ -36,4 +38,15 @@ export async function storefrontContext(deps: AppDeps, req: FastifyRequest): Pro
   const preview = typeof token === "string" && verifyPreviewToken(deps.env.APP_SIGNING_SECRET, token, store.id);
   enrichContext({ organizationId: store.organizationId, storeId: store.id, principalType: "system" });
   return { organizationId: store.organizationId, storeId: store.id, preview };
+}
+
+/**
+ * Storefront context of cart, checkout and order endpoints: only a store whose commerce
+ * module is active sells (403 errors.site.module.disabled otherwise).
+ */
+export async function storefrontCommerceContext(deps: AppDeps, req: FastifyRequest): Promise<StorefrontRequestContext> {
+  const ctx = await storefrontContext(deps, req);
+  const modules = await withTenantTx(deps.db, ctx, (tx) => loadActiveModules(tx, ctx.storeId));
+  if (!modules.includes("commerce")) throw moduleDisabled("commerce");
+  return ctx;
 }

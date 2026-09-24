@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import { AppError } from "@altyapi/commerce-core";
-import { and, asc, desc, eq, storeDomains, stores, type DbExecutor, type Database, type EkosistemPeerAccount, type ekosistemLinks } from "@altyapi/database";
+import { and, asc, desc, eq, siteProfiles, storeDomains, stores, type DbExecutor, type Database, type EkosistemPeerAccount, type ekosistemLinks } from "@altyapi/database";
 import type { Queue } from "@altyapi/events";
 import type { Logger } from "@altyapi/observability";
 import { decryptJson, encryptJson, type EnvelopeRecord, type KeyProvider } from "@altyapi/secrets";
@@ -103,6 +103,8 @@ export interface StoreIdentity {
   verifiedDomain: string | null;
   /** Active hostnames serving the store, canonical first. */
   domains: string[];
+  /** How the storefront serves pages: /pages/{handle} (prefixed) or /{handle} (root). */
+  pageUrlStyle: "prefixed" | "root";
 }
 
 /** Loads the store and its domains; the canonical host follows the storefront (canonical active domain, else default subdomain). */
@@ -117,6 +119,7 @@ export async function loadStoreIdentity(tx: DbExecutor, storeId: string, storeRo
   const canonical = domains.find((d) => d.isCanonical) ?? null;
   const platform = domains.find((d) => d.kind === "platform_subdomain") ?? null;
   const canonicalHost = canonical?.hostname ?? platform?.hostname ?? `${store.slug}.${storeRootDomain}`;
+  const [profile] = await tx.select({ pageUrlStyle: siteProfiles.pageUrlStyle }).from(siteProfiles).where(eq(siteProfiles.storeId, storeId));
   return {
     storeId: store.id,
     organizationId: store.organizationId,
@@ -131,6 +134,7 @@ export async function loadStoreIdentity(tx: DbExecutor, storeId: string, storeRo
     verifiedDomain: canonical?.hostname ?? null,
     // Hostnames that only redirect elsewhere are aliases, not domains of the store's site.
     domains: domains.filter((d) => !d.redirectTo).map((d) => d.hostname),
+    pageUrlStyle: profile?.pageUrlStyle ?? "prefixed",
   };
 }
 

@@ -16,6 +16,7 @@
     "@altyapi/checkout": "workspace:*",
     "@altyapi/commerce-core": "workspace:*",
     "@altyapi/config": "workspace:*",
+    "@altyapi/content": "workspace:*",
     "@altyapi/database": "workspace:*",
     "@altyapi/domains": "workspace:*",
     "@altyapi/ekosistem": "workspace:*",

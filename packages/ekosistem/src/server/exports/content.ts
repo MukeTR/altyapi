@@ -104,7 +104,7 @@ async function buildContent(
   for (const v of versions) {
     const kind = v.type as "home" | "page" | "landing";
     const title = pickLocalized(v.title, locale, locale) || (kind === "home" ? identity.name : v.handle);
-    const defaultPath = kind === "home" ? "/" : `/pages/${encodeURIComponent(v.handle)}`;
+    const defaultPath = kind === "home" ? "/" : identity.pageUrlStyle === "root" ? `/${encodeURIComponent(v.handle)}` : `/pages/${encodeURIComponent(v.handle)}`;
     // Content pages may set their own canonical path (storefront: page.seo.canonicalPath).
     const canonicalPath = kind !== "home" && v.seo.canonicalPath ? v.seo.canonicalPath : defaultPath;
     const seoTitle = pickLocalized(v.seo.title, locale, locale) || (kind === "home" ? identity.name : title);

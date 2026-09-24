@@ -43,7 +43,7 @@ export function buildEntries(data: SitemapData, kind: SitemapKind, base: string)
   const entries: UrlEntry[] = [];
   if (kind === "pages") {
     for (const p of data.pages) {
-      const path = p.type === "home" ? "/" : `/pages/${p.handle}`;
+      const path = p.path ?? (p.type === "home" ? "/" : `/pages/${p.handle}`);
       const locales = (p.locales ?? [data.defaultLocale]).filter((l) => supported.has(l));
       addResource(entries, Object.fromEntries(locales.map((l) => [l, url(l, path)])), data.defaultLocale, p.updatedAt);
     }

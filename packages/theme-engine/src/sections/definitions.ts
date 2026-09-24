@@ -1,43 +1,31 @@
 import { z } from "zod";
+import { SITE_MODULES } from "@altyapi/site";
 import { alignment, colorScheme, href, link, localized, optionalAsset, richText } from "./primitives";
+import { CONTENT_SECTION_DEFINITIONS } from "./content-sections";
+import { SITE_SECTION_DEFINITIONS } from "./site-sections";
+import {
+  SECTION_POLICY_TAGS,
+  type SectionBinding,
+  type SectionDefinition,
+  type SectionPlacementRule,
+} from "./types";
+import { ALL_PAGES, CONTENT_PAGES, ENTRY_TEMPLATES } from "./placements";
 
-export type PageTypeName = "home" | "product" | "collection" | "page" | "landing" | "cart" | "search" | "not_found";
-export type SectionCategory = "layout" | "hero" | "media" | "content" | "commerce" | "social_proof" | "marketing" | "template";
-
-export interface SectionDefinition {
-  type: string;
-  version: number;
-  name: { tr: string; en: string };
-  category: SectionCategory;
-  props: z.ZodObject;
-  blocks?: Record<string, z.ZodObject>;
-  maxBlocks?: number;
-  /** Data the renderer resolves from the catalog (product, collection…). */
-  contentBindings: ("product" | "collection" | "products" | "collections" | "cart" | "search")[];
-  /** Page types the section may be placed on; "global" = theme-level header/footer/overlays. */
-  allowedIn: (PageTypeName | "global")[];
-  /** Renderer id resolved by the storefront component registry. */
-  renderer: string;
-  /** Only one instance per page/global tree. */
-  singleton?: boolean;
-  /**
-   * System section: must be present exactly once on the listed placements and cannot be
-   * removed or disabled by merchants or AI (checkout-critical and navigation sections).
-   */
-  requiredIn?: (PageTypeName | "global")[];
-}
-
-const ALL_PAGES: PageTypeName[] = ["home", "product", "collection", "page", "landing", "cart", "search", "not_found"];
-const CONTENT_PAGES: PageTypeName[] = ["home", "page", "landing", "collection", "product", "not_found"];
+export * from "./types";
+export * from "./placements";
 
 const cta = link.nullable().default(null);
 
-export const SECTION_DEFINITIONS: SectionDefinition[] = [
+/** Built-in sections that predate site modules (Faz 0), tagged for the site policy. */
+const BASE_SECTION_DEFINITIONS: SectionDefinition[] = [
   {
     type: "announcement-bar",
     version: 1,
     name: { tr: "Duyuru çubuğu", en: "Announcement bar" },
     category: "marketing",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({
       rotateSeconds: z.number().int().min(2).max(30).default(5),
       dismissible: z.boolean().default(false),
@@ -54,6 +42,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Üst bilgi", en: "Header" },
     category: "layout",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({
       logoAssetId: optionalAsset,
       logoWidth: z.number().int().min(40).max(400).default(140),
@@ -61,6 +52,8 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       layout: z.enum(["logo-left", "logo-center"]).default("logo-left"),
       sticky: z.boolean().default(true),
       showSearch: z.boolean().default(true),
+      /** Cart button; shown only while the commerce module is active. */
+      showCart: z.boolean().default(true),
       showAccount: z.boolean().default(true),
       showLocaleSwitcher: z.boolean().default(false),
     }),
@@ -75,6 +68,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Alt bilgi", en: "Footer" },
     category: "layout",
+    module: "core",
+    policyTags: [],
+    propTags: { showNewsletter: ["commercial_optin"], showPaymentIcons: ["commerce"] },
     props: z.object({
       menuHandles: z.array(z.string()).max(4).default(["footer"]),
       text: richText(4000),
@@ -97,6 +93,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Hero", en: "Hero" },
     category: "hero",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({
       heading: localized(120),
       subheading: localized(300),
@@ -109,7 +108,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       height: z.enum(["small", "medium", "large", "full"]).default("large"),
     }),
     contentBindings: [],
-    allowedIn: ["home", "page", "landing", "collection"],
+    allowedIn: ["home", "page", "landing", "collection", "tpl:entries.{type}.index"],
     renderer: "builtin:hero@1",
   },
   {
@@ -117,6 +116,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Görsel banner", en: "Image banner" },
     category: "media",
+    module: "core",
+    policyTags: [],
+    propTags: { campaignId: ["discount"] },
     props: z.object({
       desktopImageAssetId: optionalAsset,
       mobileImageAssetId: optionalAsset,
@@ -126,7 +128,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       campaignId: z.uuid().nullable().default(null),
     }),
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:image-banner@1",
   },
   {
@@ -134,6 +136,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Slider", en: "Slider" },
     category: "hero",
+    module: "core",
+    policyTags: [],
+    propTags: { "slide.campaignId": ["discount"] },
     props: z.object({
       autoplay: z.boolean().default(true),
       intervalSeconds: z.number().int().min(2).max(20).default(6),
@@ -154,7 +159,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     },
     maxBlocks: 10,
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:slider@1",
   },
   {
@@ -162,6 +167,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Zengin metin", en: "Rich text" },
     category: "content",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({
       heading: localized(160),
       body: richText(),
@@ -169,7 +177,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       maxWidth: z.enum(["narrow", "medium", "wide"]).default("medium"),
     }),
     contentBindings: [],
-    allowedIn: ALL_PAGES,
+    allowedIn: [...ALL_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:rich-text@1",
   },
   {
@@ -177,6 +185,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Öne çıkan koleksiyon", en: "Featured collection" },
     category: "commerce",
+    module: "catalog",
+    policyTags: ["commerce", "price_display"],
+    propTags: {},
     props: z.object({
       heading: localized(120),
       collectionId: z.uuid().nullable().default(null),
@@ -187,7 +198,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       layout: z.enum(["grid", "carousel"]).default("grid"),
     }),
     contentBindings: ["collection", "products"],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:featured-collection@1",
   },
   {
@@ -195,6 +206,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Ürün vitrini", en: "Product showcase" },
     category: "commerce",
+    module: "catalog",
+    policyTags: ["commerce", "price_display"],
+    propTags: {},
     props: z.object({
       heading: localized(120),
       source: z.enum(["collection", "tag", "manual", "newest", "on_sale"]).default("newest"),
@@ -206,7 +220,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       columnsMobile: z.number().int().min(1).max(2).default(2),
     }),
     contentBindings: ["products"],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:product-grid@1",
   },
   {
@@ -214,13 +228,16 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Kategori kartları", en: "Category cards" },
     category: "commerce",
+    module: "catalog",
+    policyTags: ["commerce"],
+    propTags: {},
     props: z.object({ heading: localized(120), columnsDesktop: z.number().int().min(2).max(6).default(4) }),
     blocks: {
       card: z.object({ collectionId: z.uuid(), imageAssetId: optionalAsset, label: localized(80) }),
     },
     maxBlocks: 12,
     contentBindings: ["collections"],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:category-cards@1",
   },
   {
@@ -228,6 +245,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Görsel ve metin", en: "Image with text" },
     category: "content",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({
       imageAssetId: optionalAsset,
       imagePosition: z.enum(["left", "right"]).default("left"),
@@ -237,7 +257,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       colorScheme,
     }),
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:image-with-text@1",
   },
   {
@@ -245,6 +265,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Video", en: "Video" },
     category: "media",
+    module: "core",
+    policyTags: ["third_party_embed"],
+    propTags: {},
     props: z
       .object({
         heading: localized(120),
@@ -260,7 +283,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
         path: ["url"],
       }),
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:video@1",
   } as unknown as SectionDefinition,
   {
@@ -268,6 +291,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Müşteri yorumları", en: "Testimonials" },
     category: "social_proof",
+    module: "core",
+    policyTags: ["social_proof", "testimonial"],
+    propTags: {},
     props: z.object({ heading: localized(120), layout: z.enum(["grid", "carousel"]).default("carousel") }),
     blocks: {
       testimonial: z.object({
@@ -280,7 +306,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     },
     maxBlocks: 20,
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:testimonials@1",
   },
   {
@@ -288,11 +314,14 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Logo bulutu", en: "Logo cloud" },
     category: "social_proof",
+    module: "core",
+    policyTags: ["social_proof", "client_reference"],
+    propTags: {},
     props: z.object({ heading: localized(120), grayscale: z.boolean().default(true) }),
     blocks: { logo: z.object({ assetId: z.uuid(), name: z.string().max(80), link: href.nullable().default(null) }) },
     maxBlocks: 24,
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:logo-cloud@1",
   },
   {
@@ -300,6 +329,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Bülten", en: "Newsletter" },
     category: "marketing",
+    module: "core",
+    policyTags: ["commercial_optin"],
+    propTags: {},
     props: z.object({
       heading: localized(120),
       body: localized(400),
@@ -310,7 +342,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       colorScheme,
     }),
     contentBindings: [],
-    allowedIn: [...CONTENT_PAGES, "global"],
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES, "global"],
     renderer: "builtin:newsletter@1",
   },
   {
@@ -318,11 +350,14 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Sıkça sorulan sorular", en: "FAQ" },
     category: "content",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({ heading: localized(120), emitStructuredData: z.boolean().default(true) }),
     blocks: { item: z.object({ question: localized(300), answer: richText(4000) }) },
     maxBlocks: 50,
     contentBindings: [],
-    allowedIn: CONTENT_PAGES,
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES],
     renderer: "builtin:faq@1",
   },
   {
@@ -330,6 +365,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Geri sayım", en: "Countdown" },
     category: "marketing",
+    module: "core",
+    policyTags: ["promotional_urgency"],
+    propTags: { campaignId: ["discount"] },
     props: z.object({
       heading: localized(120),
       endsAt: z.iso.datetime({ offset: true }),
@@ -340,7 +378,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       colorScheme,
     }),
     contentBindings: [],
-    allowedIn: [...CONTENT_PAGES, "global"],
+    allowedIn: [...CONTENT_PAGES, ...ENTRY_TEMPLATES, "global"],
     renderer: "builtin:countdown@1",
   },
   {
@@ -348,6 +386,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Popup", en: "Popup" },
     category: "marketing",
+    module: "core",
+    policyTags: ["promo_overlay"],
+    propTags: { couponCode: ["discount"], campaignId: ["discount"], collectEmail: ["commercial_optin"] },
     props: z.object({
       heading: localized(120),
       body: richText(2000),
@@ -370,7 +411,7 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
       campaignId: z.uuid().nullable().default(null),
     }),
     contentBindings: [],
-    allowedIn: ["global", "home", "page", "landing", "collection", "product"],
+    allowedIn: ["global", "home", "page", "landing", "collection", "product", ...ENTRY_TEMPLATES],
     renderer: "builtin:popup@1",
   },
   // Template sections: the main content of catalog/system pages.
@@ -379,6 +420,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Ürün detayı", en: "Product details" },
     category: "template",
+    module: "catalog",
+    policyTags: ["commerce", "price_display"],
+    propTags: {},
     props: z.object({
       galleryLayout: z.enum(["thumbnails-left", "thumbnails-bottom", "grid"]).default("thumbnails-bottom"),
       showVendor: z.boolean().default(false),
@@ -399,6 +443,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Koleksiyon listesi", en: "Collection listing" },
     category: "template",
+    module: "catalog",
+    policyTags: ["commerce", "price_display"],
+    propTags: {},
     props: z.object({
       productsPerPage: z.number().int().min(8).max(96).default(24),
       columnsDesktop: z.number().int().min(2).max(6).default(4),
@@ -418,6 +465,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Sepet", en: "Cart" },
     category: "template",
+    module: "commerce",
+    policyTags: ["commerce", "price_display"],
+    propTags: {},
     props: z.object({ showCouponField: z.boolean().default(true), showOrderNote: z.boolean().default(false) }),
     contentBindings: ["cart"],
     allowedIn: ["cart"],
@@ -430,6 +480,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Arama sonuçları", en: "Search results" },
     category: "template",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({ productsPerPage: z.number().int().min(8).max(96).default(24) }),
     contentBindings: ["search"],
     allowedIn: ["search"],
@@ -442,6 +495,9 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
     version: 1,
     name: { tr: "Sayfa bulunamadı", en: "Not found" },
     category: "template",
+    module: "core",
+    policyTags: [],
+    propTags: {},
     props: z.object({ heading: localized(120), body: localized(400), showSearch: z.boolean().default(true) }),
     contentBindings: [],
     allowedIn: ["not_found"],
@@ -451,6 +507,70 @@ export const SECTION_DEFINITIONS: SectionDefinition[] = [
   },
 ];
 
+
+/** Every built-in section definition (all versions: pinned instances keep rendering with theirs). */
+export const SECTION_DEFINITIONS: SectionDefinition[] = [...BASE_SECTION_DEFINITIONS, ...CONTENT_SECTION_DEFINITIONS, ...SITE_SECTION_DEFINITIONS];
+
+const PAGE_PLACEMENTS = new Set<string>(["global", ...ALL_PAGES]);
+const BINDINGS = new Set<SectionBinding>(["product", "collection", "products", "collections", "cart", "search", "entry", "entries", "business_identity", "locations"]);
+
+/** A placement rule names a page type, "global", or a template a module manifest declares. */
+function isKnownPlacementRule(rule: SectionPlacementRule): boolean {
+  if (PAGE_PLACEMENTS.has(rule)) return true;
+  if (!rule.startsWith("tpl:")) return false;
+  // "{type}" stands for any content type key; a sample key checks the pattern against the manifests.
+  return SITE_MODULES.templateFor(rule.slice(4).replaceAll("{type}", "sample")) !== null;
+}
+
+function isTaggablePropPath(def: SectionDefinition, path: string): boolean {
+  const [first, second, ...rest] = path.split(".");
+  if (rest.length || !first) return false;
+  if (second === undefined) return first in def.props.shape;
+  const block = def.blocks?.[first];
+  return Boolean(block && second in block.shape);
+}
+
+/**
+ * Registry build check, run when the module loads (API and worker boot, registry sync): every
+ * definition is tagged (module, policy tags, prop tags) with known values, placed only where
+ * a page type or module template exists, and required only where it is allowed and single. An
+ * untagged or mis-tagged definition throws here, so it can never be synced or rendered.
+ */
+function assertValidRegistry(defs: readonly SectionDefinition[]): void {
+  const problems: string[] = [];
+  const keys = new Set<string>();
+  const tags = new Set<string>(SECTION_POLICY_TAGS);
+  for (const def of defs) {
+    const id = `${def.type}@${def.version}`;
+    if (keys.has(id)) problems.push(`duplicate section ${id}`);
+    keys.add(id);
+    if (def.renderer !== `builtin:${id}`) problems.push(`${id}: renderer must be "builtin:${id}"`);
+    if (typeof def.module !== "string" || !SITE_MODULES.has(def.module)) problems.push(`${id}: module "${String(def.module)}" is not a registered site module`);
+    if (!Array.isArray(def.policyTags)) problems.push(`${id}: policyTags must be declared (an empty list when the section does nothing the policy restricts)`);
+    else {
+      for (const t of def.policyTags) if (!tags.has(t)) problems.push(`${id}: unknown policy tag "${t}"`);
+      if (new Set(def.policyTags).size !== def.policyTags.length) problems.push(`${id}: policy tag listed twice`);
+    }
+    if (!def.propTags || typeof def.propTags !== "object") problems.push(`${id}: propTags must be declared (an empty object when no prop carries a tag)`);
+    else {
+      for (const [path, list] of Object.entries(def.propTags)) {
+        if (!isTaggablePropPath(def, path)) problems.push(`${id}: propTags names unknown prop "${path}"`);
+        for (const t of list) if (!tags.has(t)) problems.push(`${id}: unknown policy tag "${t}" on prop "${path}"`);
+      }
+    }
+    if (!def.allowedIn.length) problems.push(`${id}: allowedIn is empty`);
+    for (const rule of def.allowedIn) if (!isKnownPlacementRule(rule)) problems.push(`${id}: unknown placement "${rule}"`);
+    for (const rule of def.requiredIn ?? []) {
+      if (!def.allowedIn.includes(rule)) problems.push(`${id}: required in "${rule}" but not allowed there`);
+      if (!def.singleton) problems.push(`${id}: required sections must be singletons`);
+    }
+    for (const b of def.contentBindings) if (!BINDINGS.has(b)) problems.push(`${id}: unknown content binding "${b}"`);
+  }
+  if (problems.length) throw new Error(`Invalid section registry:\n- ${problems.join("\n- ")}`);
+}
+
+assertValidRegistry(SECTION_DEFINITIONS);
+
 const byKey = new Map(SECTION_DEFINITIONS.map((d) => [`${d.type}@${d.version}`, d]));
 const latest = new Map<string, SectionDefinition>();
 for (const d of SECTION_DEFINITIONS) {
@@ -458,8 +578,14 @@ for (const d of SECTION_DEFINITIONS) {
   if (!cur || cur.version < d.version) latest.set(d.type, d);
 }
 
+/** A definition by type and pinned version; without a version, the latest one (what new instances get). */
 export function getSectionDefinition(type: string, version?: number): SectionDefinition | undefined {
   return version === undefined ? latest.get(type) : byKey.get(`${type}@${version}`);
+}
+
+/** Latest version of every section type (the editor's section library). */
+export function latestSectionDefinitions(): SectionDefinition[] {
+  return [...latest.values()];
 }
 
 /** JSON Schema of a definition for the editor's property panel and the DB registry. */

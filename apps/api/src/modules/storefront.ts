@@ -19,6 +19,7 @@ import {
   listRedirects,
   livePagePaths,
   pagePath,
+  pageUrlStyle,
   publish,
   publishSchema,
   rollbackTo,
@@ -36,6 +37,7 @@ import {
   type PageRow,
 } from "@altyapi/theme-engine";
 import { assertCan, type StoreContext } from "@altyapi/tenancy";
+import type { PageUrlStyle } from "@altyapi/site";
 import type { AppDeps } from "../deps";
 import { storeContext } from "../plugins/auth";
 import { storeParams } from "./stores";
@@ -47,13 +49,14 @@ const json = z.record(z.string(), z.unknown());
  * (a rename only in the draft does not move it), otherwise the URL it will go live under.
  * livePath and draftPath give both sides explicitly.
  */
-const pageView = (p: PageRow, livePaths: Map<string, string>) => ({
+export const pageView = (p: PageRow, livePaths: Map<string, string>, style: PageUrlStyle) => ({
   id: p.id,
   type: p.type,
   handle: p.handle,
-  path: livePaths.get(p.id) ?? pagePath(p.type, p.handle),
+  templateKey: p.templateKey,
+  path: livePaths.get(p.id) ?? pagePath(p.type, p.handle, style),
   livePath: livePaths.get(p.id) ?? null,
-  draftPath: pagePath(p.type, p.handle),
+  draftPath: pagePath(p.type, p.handle, style),
   title: p.title,
   status: p.status,
   draftContent: p.draftContent as unknown as Record<string, unknown>,
@@ -67,10 +70,12 @@ const pageView = (p: PageRow, livePaths: Map<string, string>) => ({
   updatedAt: p.updatedAt,
 });
 
-const pageSchema = z.object({
+export const pageSchema = z.object({
   id: z.uuid(),
   type: z.string(),
   handle: z.string(),
+  /** Layout a template page provides ("entries.post.detail"); null for other page types. */
+  templateKey: z.string().nullable(),
   path: z.string().nullable(),
   livePath: z.string().nullable(),
   draftPath: z.string().nullable(),
@@ -113,7 +118,7 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
   const base = "/v1/organizations/:organizationId/stores/:storeId/storefront";
   const withLivePath = async (ctx: StoreContext, load: (ctx: StoreContext) => Promise<PageRow>) => {
     const page = await load(ctx);
-    return pageView(page, await livePagePaths(deps.db, ctx, [page.id]));
+    return pageView(page, await livePagePaths(deps.db, ctx, [page.id]), await pageUrlStyle(deps.db, ctx));
   };
 
   app.get("/v1/section-definitions", { schema: { tags: ["storefront"] } }, async () => ({
@@ -122,7 +127,11 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
       version: d.version,
       name: d.name,
       category: d.category,
+      module: d.module,
+      policyTags: d.policyTags,
+      propTags: d.propTags,
       allowedIn: d.allowedIn,
+      requiredIn: d.requiredIn ?? [],
       contentBindings: d.contentBindings,
       maxBlocks: d.maxBlocks ?? null,
       singleton: d.singleton ?? false,
@@ -158,15 +167,15 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
       schema: {
         tags: ["storefront"],
         params: storeParams,
-        querystring: z.object({ type: z.enum(["home", "product", "collection", "page", "landing", "cart", "search", "not_found"]).optional() }),
+        querystring: z.object({ type: z.enum(["home", "product", "collection", "page", "landing", "cart", "search", "not_found", "template"]).optional() }),
         response: { 200: z.object({ items: z.array(pageSchema) }) },
       },
     },
     async (req) => {
       const ctx = await storeContext(deps, req);
       const rows = await listPages(deps.db, ctx, req.query);
-      const live = await livePagePaths(deps.db, ctx, rows.map((r) => r.id));
-      return { items: rows.map((r) => pageView(r, live)) };
+      const [live, style] = await Promise.all([livePagePaths(deps.db, ctx, rows.map((r) => r.id)), pageUrlStyle(deps.db, ctx)]);
+      return { items: rows.map((r) => pageView(r, live, style)) };
     },
   );
 
@@ -174,7 +183,10 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
     `${base}/pages`,
     { schema: { tags: ["storefront"], params: storeParams, body: createPageSchema, response: { 201: pageSchema } } },
     // A new page is never live yet.
-    async (req, reply) => reply.status(201).send(pageView(await createPage(deps.db, await storeContext(deps, req), req.body), new Map())),
+    async (req, reply) => {
+      const ctx = await storeContext(deps, req);
+      return reply.status(201).send(pageView(await createPage(deps.db, ctx, req.body), new Map(), await pageUrlStyle(deps.db, ctx)));
+    },
   );
 
   app.get(
@@ -239,8 +251,8 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
     },
   );
 
-  // Draft history: undo / redo / restore for theme, pages and menus (the live site changes only on publish).
-  const historyParams = storeParams.extend({ resource: z.enum(["theme", "page", "navigation"]), resourceId: z.uuid() });
+  // Draft history: undo / redo / restore for theme, pages, menus and content entries (the live site changes only on publish).
+  const historyParams = storeParams.extend({ resource: z.enum(["theme", "page", "navigation", "entry"]), resourceId: z.uuid() });
   app.get(`${base}/history/:resource/:resourceId`, { schema: { tags: ["storefront"], params: historyParams } }, async (req) =>
     listRevisions(deps.db, await storeContext(deps, req), req.params.resource, req.params.resourceId),
   );

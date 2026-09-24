@@ -21,6 +21,10 @@ export const storeSchema = z.object({
   countryCode: z.string(),
   routingVersion: z.number().int(),
   contentVersion: z.number().int(),
+  /** Active capability modules (core included), in dependency order; see /site/modules. */
+  modules: z.array(z.string()),
+  modulesVersion: z.number().int(),
+  policyVersion: z.number().int(),
 });
 
 const orgParams = z.object({ organizationId: z.uuid() });
@@ -49,7 +53,8 @@ export const storeRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async (app,
             await ensureDefaultLocation(tx, scope);
             await ensureBasePriceList(tx, scope, req.body.defaultCurrency);
             await ensureDefaultTaxClass(tx, scope, req.body.countryCode);
-            await bootstrapStorefront(tx, store);
+            // The storefront starts from the site-kind preset (shop layout, or pages without a cart).
+            await bootstrapStorefront(tx, { ...store, preset: store.siteKind });
           },
         },
       );

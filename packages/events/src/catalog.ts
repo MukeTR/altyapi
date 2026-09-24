@@ -56,6 +56,46 @@ export interface DomainEventMap {
     change: "created" | "updated" | "deleted";
     contentVersion: number;
   };
+  /**
+   * A content entry went live: first publish or a new immutable version (record_versions).
+   * locales are the languages the version is published in; contentVersion is the store's
+   * content version after the publish.
+   */
+  "content.entry.published": {
+    entryId: string;
+    typeId: string;
+    typeKey: string;
+    versionId: string;
+    version: number;
+    locales: string[];
+    reason: "manual" | "scheduled";
+    contentVersion: number;
+  };
+  /** A live content entry was taken down (its version closed); contentVersion as above. */
+  "content.entry.unpublished": { entryId: string; typeId: string; typeKey: string; reason: "manual" | "scheduled"; contentVersion: number };
+  /**
+   * Publish and/or take-down times of an entry were set or cleared (ISO timestamps);
+   * scheduledRevision is the approved draft revision the scheduled publish puts live.
+   */
+  "content.entry.scheduled": { entryId: string; typeId: string; publishAt: string | null; unpublishAt: string | null; scheduledRevision: number | null };
+  /** An entry was archived; wasLive tells whether it was taken down with it (contentVersion is then the new version). */
+  "content.entry.archived": { entryId: string; typeId: string; wasLive: boolean; contentVersion: number | null };
+  /**
+   * A scheduled publish or take-down of an entry was refused (errorKey, e.g. a required field
+   * or a slug another entry is live under) and the entry left the schedule.
+   */
+  "content.entry.schedule_failed": { entryId: string; operation: "publish" | "unpublish"; errorKey: string; details: Record<string, unknown> };
+  /**
+   * A content type was installed, created, changed or archived. prefixesChanged: its URL
+   * prefixes moved (prefix redirects were written). contentVersion is the store's content version after it.
+   */
+  "content.type.changed": {
+    typeId: string;
+    typeKey: string;
+    change: "installed" | "created" | "updated" | "archived";
+    prefixesChanged: boolean;
+    contentVersion: number;
+  };
   "tracking.updated": { version: number };
   "marketing.consent_changed": { customerId: string | null; anonymousId: string | null; categories: Record<string, boolean> };
   /**

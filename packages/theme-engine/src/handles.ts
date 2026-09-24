@@ -1,5 +1,7 @@
 import { conflict, invalid, isValidSlug } from "@altyapi/commerce-core";
-import { and, eq, inArray, pages, pageVersions, publications, storefrontState, type Transaction } from "@altyapi/database";
+import { servesIndexRoute } from "@altyapi/content";
+import { and, contentTypes, eq, inArray, pages, pageVersions, publications, siteProfiles, storefrontState, type Transaction } from "@altyapi/database";
+import { isReservedPathSegment } from "@altyapi/site";
 
 /** Page types served under their own handle (/pages/<handle>). */
 export const ROUTABLE_PAGE_TYPES = ["page", "landing"] as const;
@@ -39,6 +41,24 @@ export async function assertHandleFree(tx: Transaction, storeId: string, handle:
   for (const [pageId, served] of await servedHandles(tx, storeId)) {
     if (served === handle && pageId !== exceptId) throw conflict("errors.page.handle_taken", { handle });
   }
+  await assertRootHandleAvailable(tx, storeId, handle);
+}
+
+/**
+ * With root-level page URLs (page_url_style = 'root') a page is served at /{handle}, so its
+ * handle must not be a system path segment or a language code, nor the path of a content type
+ * that answers /{prefix} itself (its index or singleton), which would hide the page.
+ */
+export async function assertRootHandleAvailable(tx: Transaction, storeId: string, handle: string): Promise<void> {
+  const [profile] = await tx.select({ style: siteProfiles.pageUrlStyle }).from(siteProfiles).where(eq(siteProfiles.storeId, storeId));
+  if (profile?.style !== "root") return;
+  if (isReservedPathSegment(handle)) throw invalid("errors.page.handle_reserved", { handle });
+  const types = await tx
+    .select({ key: contentTypes.key, kind: contentTypes.kind, routePrefix: contentTypes.routePrefix, settings: contentTypes.settings })
+    .from(contentTypes)
+    .where(and(eq(contentTypes.storeId, storeId), eq(contentTypes.status, "active")));
+  const owner = types.find((t) => servesIndexRoute(t) && Object.values(t.routePrefix).includes(handle));
+  if (owner) throw conflict("errors.page.handle_taken_by_content_type", { handle, typeKey: owner.key });
 }
 
 /**

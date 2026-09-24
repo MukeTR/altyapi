@@ -16,6 +16,7 @@
     "@altyapi/database": "workspace:*",
     "@altyapi/events": "workspace:*",
     "@altyapi/observability": "workspace:*",
+    "@altyapi/site": "workspace:*",
     "zod": "^4.6.5"
   }
 }
