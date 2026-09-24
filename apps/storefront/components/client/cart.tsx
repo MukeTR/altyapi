@@ -65,7 +65,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (next) {
         setOpen(true);
         const line = next.lines.find((l) => l.variantId === variantId);
-        track("product_added_to_cart", { variantId, quantity, value: line?.unitPrice, currency: next.currency });
+        track("product_added_to_cart", {
+          variantId,
+          quantity,
+          value: line ? String(BigInt(line.unitPrice) * BigInt(quantity)) : undefined,
+          currency: next.currency,
+          items: line ? [{ itemId: variantId, productId: line.productId, title: line.title, unitPrice: line.unitPrice, quantity }] : [],
+        });
       }
       return Boolean(next);
     },

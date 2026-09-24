@@ -205,6 +205,9 @@ importers:
       '@altyapi/inventory':
         specifier: workspace:*
         version: link:../../packages/inventory
+      '@altyapi/marketing':
+        specifier: workspace:*
+        version: link:../../packages/marketing
       '@altyapi/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -502,6 +505,9 @@ importers:
       '@altyapi/observability':
         specifier: workspace:*
         version: link:../observability
+      '@altyapi/secrets':
+        specifier: workspace:*
+        version: link:../secrets
       '@altyapi/tenancy':
         specifier: workspace:*
         version: link:../tenancy

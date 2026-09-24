@@ -7,6 +7,7 @@ import { domainEventHandlers, domainJobHandlers, flushEdgeContentVersions, sched
 import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
 import { catalogEventHandlers, catalogJobHandlers, catalogScheduledTasks } from "./handlers/catalog";
 import { orderScheduledTasks } from "./handlers/orders";
+import { marketingEventHandlers } from "./handlers/marketing";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
@@ -19,7 +20,7 @@ const runtime = new ConsumerRuntime({
   queue: deps.queue,
   logger: deps.logger,
   maxAttempts: deps.env.QUEUE_MAX_ATTEMPTS,
-  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps, r2)],
+  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps, r2), ...marketingEventHandlers(deps)],
   jobHandlers: [...domainJobHandlers(deps), ...catalogJobHandlers(deps, r2)],
 });
 

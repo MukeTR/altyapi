@@ -5,6 +5,9 @@ import { t } from "@/lib/i18n";
 import { mediaUrl } from "@/lib/media";
 import { Sections } from "@/components/sections/render";
 import { CartDrawer, CartProvider } from "@/components/client/cart";
+import { ConsentBanner, ConsentPreferencesLink } from "@/components/client/consent-banner";
+import { TrackingLayer } from "@/components/client/tracking-layer";
+import { hasTrackers } from "@/lib/tracking-types";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -26,6 +29,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const after = site.globalSections.filter((s) => s.type === "footer" || s.type === "newsletter");
   const overlays = site.globalSections.filter((s) => s.type === "popup");
   const fonts = fontHref(site);
+  // Tracking and consent come from the protected tracking layer and are rendered here, outside
+  // theme sections, so no design change can remove or alter them. Previews never track.
+  // `tracking` may be absent while an older API version is still serving during a rollout.
+  const tracking = !site.preview && site.tracking && hasTrackers(site.tracking) ? site.tracking : null;
   return (
     <html lang={site.locale}>
       <head>
@@ -65,6 +72,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               }}
             />
           </CartProvider>
+        )}
+        {tracking && (
+          <>
+            <ConsentPreferencesLink locale={site.locale} />
+            <ConsentBanner policyVersion={tracking.consentPolicyVersion} locale={site.locale} />
+            <TrackingLayer tracking={tracking} />
+          </>
         )}
       </body>
     </html>

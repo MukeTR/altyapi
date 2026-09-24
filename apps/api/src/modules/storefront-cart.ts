@@ -27,6 +27,7 @@ import {
   type CartRow,
 } from "@altyapi/checkout";
 import { getOrderByAccessToken } from "@altyapi/orders";
+import { catalogItemId } from "@altyapi/marketing";
 import { AppError } from "@altyapi/commerce-core";
 import type { AppDeps } from "../deps";
 import { storefrontContext } from "../plugins/storefront-auth";
@@ -170,7 +171,7 @@ export const storefrontCartRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = as
         ctx,
         cartToken(req),
         req.body,
-        clientIp(req),
+        { ip: clientIp(req), userAgent: typeof req.headers["x-altyapi-client-ua"] === "string" ? req.headers["x-altyapi-client-ua"] : null },
       );
       return reply.status(201).send(result);
     },
@@ -191,7 +192,7 @@ export const storefrontCartRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = as
         email: o.order.email,
         currency: o.order.currency,
         totals: { subtotal: o.order.subtotal, discountTotal: o.order.discountTotal, shippingTotal: o.order.shippingTotal, taxTotal: o.order.taxTotal, total: o.order.total },
-        lines: o.lines.map((l) => ({ title: l.title, variantTitle: l.variantTitle, quantity: l.quantity, total: l.total, imageObjectKey: l.imageObjectKey })),
+        lines: o.lines.map((l) => ({ itemId: catalogItemId(l), title: l.title, variantTitle: l.variantTitle, quantity: l.quantity, total: l.total, imageObjectKey: l.imageObjectKey })),
         shippingAddress: o.shippingAddress,
         createdAt: o.order.createdAt,
       };

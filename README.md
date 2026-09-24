@@ -205,3 +205,24 @@ Yerel geliştirmede R2 yerine MinIO kullanılabilir: `docker compose up -d minio
   (kim/hangi AI ajanı/ne zaman). `…/storefront/history/:resource/:id` altında `undo`, `redo` ve `restore`
   uç noktaları bulunur; revizyonlar ağaç yapısındadır (geri alınıp düzenlenen dal kaybolmaz, restore ile dönülebilir).
   Yayındaki site yalnızca publish ile değişir; yayınlanmış sürümler için ayrıca publication rollback vardır.
+
+### Tracking, pixel ve çerez izni (korunan katman)
+
+- Pixel/analytics yapılandırması `tracking_configs` tablosundadır; tema, sayfa ve section'lardan tamamen ayrıdır.
+  Tasarım kaydı, publish, rollback veya undo/redo bu katmana dokunamaz. Yazma yetkisi yalnızca `tracking:manage`
+  (organization_owner, store_admin, marketing_manager) izninde; AI ajanları hangi yetkiye sahip olursa olsun değiştiremez.
+- Admin API: `GET/PUT /v1/organizations/:orgId/stores/:storeId/tracking` (iyimser kilit: `expectedVersion`),
+  `GET …/tracking/deliveries` (sunucu taraflı dönüşüm gönderim geçmişi). Kimlikler format doğrulamasından geçer
+  (GTM-, G-, AW-, Meta pixel ID, TikTok pixel kodu); sunucu anahtarları (Meta CAPI token, TikTok access token,
+  GA4 API secret) KMS ile şifrelenir, API'den asla geri okunmaz ve denetim kaydına yazılmaz.
+- `renewConsent: true` politika sürümünü artırır; tüm ziyaretçilere izin yeniden sorulur.
+- Storefront: çerez banner'ı ve tracking katmanı layout'ta, section'ların dışında render edilir. Script'ler yalnızca
+  izinden sonra yüklenir: GA4 → analitik izni; Meta, TikTok, Google Ads → pazarlama izni; GTM → herhangi biri
+  (Google Consent Mode v2 sinyalleriyle). İzin geri çekilirse sayfa yeniden yüklenir. Seçimler `consent_records`
+  tablosuna kanıt olarak (metin, politika sürümü, IP hash'i) yazılır. Önizlemede tracking çalışmaz.
+- Sunucu taraflı dönüşümler: `order.confirmed` olayında worker Meta Conversions API, TikTok Events API ve GA4
+  Measurement Protocol'e satın alma gönderir. Tarayıcı pixel'i ile aynı `event_id` (`purchase:{orderId}`)
+  kullanıldığı için platformlar satın almayı bir kez sayar. E-posta/telefon SHA-256 ile hash'lenir; pazarlama izni
+  yoksa Meta/TikTok'a, analitik izni veya GA client id yoksa GA4'e gönderilmez. Her hedef `conversion_deliveries`
+  tablosunda bir kez kaydedilir; geçici hatalar (5xx/429) kuyrukta yeniden denenir.
+- Env: `META_GRAPH_API_VERSION` (varsayılan `v24.0`).

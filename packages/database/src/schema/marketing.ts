@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { timestamps, tstz } from "./_shared";
 import { stores } from "./tenancy";
 import { customers } from "./customers";
@@ -74,4 +74,63 @@ export const consentRecords = pgTable(
     createdAt: tstz().notNull().defaultNow(),
   },
   (t) => [index("consent_records_subject_idx").on(t.storeId, t.subjectType, t.subjectId, t.createdAt)],
+);
+
+export interface TrackingSecretsEnvelope {
+  ciphertext: string;
+  iv: string;
+  authTag: string;
+  encryptedDataKey: string;
+  keyId: string;
+}
+
+/**
+ * Protected tracking layer (pixels, analytics, conversion APIs). Deliberately separate from
+ * themes and pages: design edits, publishes and rollbacks can never change it.
+ */
+export const trackingConfigs = pgTable("tracking_configs", {
+  storeId: uuid()
+    .primaryKey()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  organizationId: uuid().notNull(),
+  gtmContainerId: text(),
+  ga4MeasurementId: text(),
+  googleAdsConversionId: text(),
+  googleAdsPurchaseLabel: text(),
+  metaPixelId: text(),
+  tiktokPixelId: text(),
+  metaCapiEnabled: boolean().notNull().default(false),
+  tiktokEventsApiEnabled: boolean().notNull().default(false),
+  ga4MeasurementProtocolEnabled: boolean().notNull().default(false),
+  /** Encrypted server-side credentials (Meta CAPI token, TikTok access token, GA4 API secret). */
+  secrets: jsonb().$type<TrackingSecretsEnvelope>(),
+  /** Consent policy version; changing it re-asks every visitor. */
+  consentPolicyVersion: text().notNull().default("1"),
+  version: integer().notNull().default(1),
+  updatedByPrincipalId: uuid(),
+  ...timestamps,
+});
+
+export const conversionDeliveryStatus = pgEnum("conversion_delivery_status", ["sent", "failed", "skipped"]);
+
+/** Server-side conversion sends; powers the pixel health view and guarantees single delivery. */
+export const conversionDeliveries = pgTable(
+  "conversion_deliveries",
+  {
+    id: uuid().primaryKey(),
+    organizationId: uuid().notNull(),
+    storeId: uuid().notNull(),
+    destination: text().notNull(),
+    eventName: text().notNull(),
+    eventId: text().notNull(),
+    orderId: uuid(),
+    status: conversionDeliveryStatus().notNull(),
+    httpStatus: integer(),
+    message: text(),
+    createdAt: tstz().notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("conversion_deliveries_uq").on(t.storeId, t.destination, t.eventId),
+    index("conversion_deliveries_store_idx").on(t.storeId, t.createdAt),
+  ],
 );

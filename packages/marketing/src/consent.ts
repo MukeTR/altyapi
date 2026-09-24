@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError, newId } from "@altyapi/commerce-core";
 import { hmacSign } from "@altyapi/auth";
-import { and, consentRecords, eq, marketingContacts, sql, withTenantTx, type Database, type Transaction } from "@altyapi/database";
+import { and, consentRecords, eq, marketingContacts, sql, trackingConfigs, withTenantTx, type Database, type Transaction } from "@altyapi/database";
 import { appendEvent } from "@altyapi/events";
 
 export interface StoreRef {
@@ -142,5 +142,44 @@ export async function unsubscribeEmail(db: Database, ref: StoreRef, contactId: s
       { subjectType: "contact", subjectId: contactId, purpose: "email_marketing", categories: { email_marketing: false }, policyVersion: EMAIL_MARKETING_POLICY_VERSION, source },
       meta,
     );
+  });
+}
+
+export const cookieConsentSchema = z.object({
+  anonymousId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
+  categories: z.object({ analytics: z.boolean(), marketing: z.boolean(), personalization: z.boolean() }),
+  policyVersion: z.string().max(20),
+  /** The banner text the shopper saw, stored as evidence. */
+  textSnapshot: z.string().max(4000).optional(),
+  source: z.enum(["banner", "preferences"]),
+});
+
+/**
+ * Cookie/tracking consent from the storefront banner. The policy version must match the
+ * store's current one; a stale banner is told to ask again.
+ */
+export async function recordCookieConsent(db: Database, ref: StoreRef, raw: unknown, meta: RequestMeta) {
+  const parsed = cookieConsentSchema.safeParse(raw);
+  if (!parsed.success) throw new AppError("validation_failed", "errors.consent.invalid");
+  const input = parsed.data;
+  return withTenantTx(db, ref, async (tx) => {
+    const config = await tx.query.trackingConfigs.findFirst({ where: eq(trackingConfigs.storeId, ref.storeId) });
+    const current = config?.consentPolicyVersion ?? "1";
+    if (input.policyVersion !== current) throw new AppError("conflict", "errors.consent.policy_outdated", { policyVersion: current });
+    const id = await recordConsent(
+      tx,
+      ref,
+      {
+        subjectType: "anonymous",
+        subjectId: input.anonymousId,
+        purpose: "cookies",
+        categories: { necessary: true, ...input.categories },
+        policyVersion: current,
+        textSnapshot: input.textSnapshot ?? null,
+        source: `storefront:${input.source}`,
+      },
+      meta,
+    );
+    return { id, policyVersion: current };
   });
 }

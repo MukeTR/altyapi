@@ -10,6 +10,12 @@ export interface AttributionSnapshot {
   lastTouch?: TouchPoint | null;
   couponCode?: string | null;
   affiliateCode?: string | null;
+  /** Consent state at the time attribution was captured. */
+  consent?: { analytics: boolean; marketing: boolean } | null;
+  /** Browser identifiers for conversion APIs (only stored with marketing consent). */
+  identifiers?: { fbp?: string | null; fbc?: string | null; ttp?: string | null; ttclid?: string | null; gaClientId?: string | null } | null;
+  /** Checkout request context for conversion APIs (only with marketing consent). */
+  client?: { ip?: string | null; userAgent?: string | null; pageUrl?: string | null } | null;
 }
 
 export interface TouchPoint {

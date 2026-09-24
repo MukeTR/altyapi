@@ -295,28 +295,54 @@ const touchSchema = z.object({
   utmTerm: z.string().max(200).nullable().optional(),
   referrer: z.string().max(1000).nullable().optional(),
   landingPage: z.string().max(1000).nullable().optional(),
-  clickIds: z.record(z.enum(["gclid", "gbraid", "wbraid", "fbclid", "ttclid", "msclkid"]), z.string().max(500)).optional(),
+  clickIds: z.partialRecord(z.enum(["gclid", "gbraid", "wbraid", "fbclid", "ttclid", "msclkid"]), z.string().max(500)).optional(),
 });
 
 export const attributionSchema = z.object({
   firstTouch: touchSchema.nullable().optional(),
   lastTouch: touchSchema.nullable().optional(),
   affiliateCode: z.string().max(64).nullable().optional(),
+  consent: z.object({ analytics: z.boolean(), marketing: z.boolean() }).optional(),
+  // Malformed browser cookies are dropped rather than failing the request.
+  identifiers: z
+    .object({
+      fbp: z.string().max(200).regex(/^fb\.\d\.\d+\.\d+$/).nullable().optional().catch(null),
+      fbc: z.string().max(500).regex(/^fb\.\d\.\d+\.[\w-]+$/).nullable().optional().catch(null),
+      ttp: z.string().max(200).regex(/^[\w.-]+$/).nullable().optional().catch(null),
+      ttclid: z.string().max(500).regex(/^[\w.-]+$/).nullable().optional().catch(null),
+      gaClientId: z.string().max(100).regex(/^\d+\.\d+$/).nullable().optional().catch(null),
+    })
+    .optional(),
 });
 
-/** Stores attribution sent by the storefront (only when the shopper consented to marketing). */
+/**
+ * Stores attribution sent by the storefront. Consent decides what is kept: browser
+ * identifiers for ad platforms need marketing consent, the GA client id needs analytics
+ * consent, and withdrawing consent clears what was stored before.
+ */
 export async function setAttribution(deps: CartDeps, ref: StoreRef, token: string, input: z.infer<typeof attributionSchema>) {
   await withTenantTx(deps.db, ref, async (tx) => {
     const cart = await loadCart(tx, ref, token, true);
     const current = cart.attribution;
+    const consent = input.consent ?? current.consent ?? { analytics: false, marketing: false };
+    const tracked = consent.marketing || consent.analytics;
+    const ids = { ...(current.identifiers ?? {}), ...(input.identifiers ?? {}) };
     await tx
       .update(carts)
       .set({
         attribution: {
-          firstTouch: current.firstTouch ?? (input.firstTouch as TouchPoint | null | undefined) ?? null,
-          lastTouch: (input.lastTouch as TouchPoint | null | undefined) ?? current.lastTouch ?? null,
+          firstTouch: tracked ? (current.firstTouch ?? (input.firstTouch as TouchPoint | null | undefined) ?? null) : null,
+          lastTouch: tracked ? ((input.lastTouch as TouchPoint | null | undefined) ?? current.lastTouch ?? null) : null,
           affiliateCode: input.affiliateCode ?? current.affiliateCode ?? null,
           couponCode: current.couponCode ?? null,
+          consent,
+          identifiers: {
+            fbp: consent.marketing ? (ids.fbp ?? null) : null,
+            fbc: consent.marketing ? (ids.fbc ?? null) : null,
+            ttp: consent.marketing ? (ids.ttp ?? null) : null,
+            ttclid: consent.marketing ? (ids.ttclid ?? null) : null,
+            gaClientId: consent.analytics ? (ids.gaClientId ?? null) : null,
+          },
         },
       })
       .where(eq(carts.id, cart.id));

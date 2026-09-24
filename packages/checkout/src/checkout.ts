@@ -50,7 +50,13 @@ function validateForCheckout(cart: CartRow, calc: CartCalculation, requiresPhone
   if (problems.length) throw new AppError("unprocessable", "errors.checkout.not_ready", { problems, issues: calc.issues });
 }
 
-function draftFromCalc(cart: CartRow, calc: CartCalculation): OrderDraft {
+export interface CheckoutClient {
+  ip: string;
+  userAgent: string | null;
+  pageUrl: string | null;
+}
+
+function draftFromCalc(cart: CartRow, calc: CartCalculation, client: CheckoutClient): OrderDraft {
   const adjustments: OrderDraft["adjustments"] = [];
   for (const d of calc.discounts) {
     for (const la of d.lineAmounts) {
@@ -93,7 +99,12 @@ function draftFromCalc(cart: CartRow, calc: CartCalculation): OrderDraft {
     shippingAddress: calc.shippingAddress,
     billingAddress: calc.billingAddress,
     shippingMethod: calc.shipping ? { rateId: calc.shipping.rateId, name: calc.shipping.name, carrierCode: calc.shipping.carrierCode, amount: calc.shipping.amount } : null,
-    attribution: { ...cart.attribution, couponCode: calc.appliedCodes[0] ?? null },
+    attribution: {
+      ...cart.attribution,
+      couponCode: calc.appliedCodes[0] ?? null,
+      // Request context for conversion APIs is kept only with marketing consent.
+      client: cart.attribution.consent?.marketing ? { ip: client.ip, userAgent: client.userAgent?.slice(0, 400) ?? null, pageUrl: client.pageUrl } : null,
+    },
     couponCodes: calc.appliedCodes,
     source: "storefront",
   };
@@ -138,8 +149,9 @@ export async function startCheckout(
   ref: StoreRef,
   token: string,
   input: z.infer<typeof startCheckoutSchema>,
-  clientIp: string,
+  client: Omit<CheckoutClient, "pageUrl">,
 ): Promise<CheckoutStart> {
+  const clientIp = client.ip;
   const prepared = await withTenantTx(deps.db, ref, async (tx) => {
     const cart = await loadCart(tx, ref, token, true);
     if (cart.status === "completed") throw new AppError("conflict", "errors.cart.completed");
@@ -175,7 +187,7 @@ export async function startCheckout(
     const def = deps.payments.registry[connection.provider];
     const calc = await calculateCart(tx, cart, deps.discounts, { defaultLocale: store!.defaultLocale });
     validateForCheckout(cart, calc, def.requiresPhone);
-    const { order, accessToken } = await createOrder(tx, ref, draftFromCalc(cart, calc));
+    const { order, accessToken } = await createOrder(tx, ref, draftFromCalc(cart, calc, { ...client, pageUrl: `${origin}/checkout` }));
     await reserveStock(tx, ref, {
       lines: calc.lines.filter((l) => l.available).map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
       orderId: order.id,

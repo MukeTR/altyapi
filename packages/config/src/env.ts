@@ -164,6 +164,8 @@ export type ApiEnv = z.infer<typeof apiEnvSchema>;
 export const workerEnvSchema = apiEnvSchema.omit({ API_HOST: true, API_PORT: true }).extend({
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(8),
   WORKER_HEALTH_PORT: z.coerce.number().int().positive().default(4100),
+  /** Graph API version for the Meta Conversions API; upgrade when Meta deprecates it. */
+  META_GRAPH_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v24.0"),
 });
 
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;

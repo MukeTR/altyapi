@@ -17,6 +17,7 @@
     "@altyapi/events": "workspace:*",
     "@altyapi/observability": "workspace:*",
     "@altyapi/tenancy": "workspace:*",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@altyapi/secrets": "workspace:*"
   }
 }

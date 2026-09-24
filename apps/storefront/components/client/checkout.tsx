@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AddressView, ApiErrorBody } from "@/lib/client/cart-types";
 import { track } from "@/lib/client/track";
+import { syncAttribution } from "@/lib/client/attribution";
 import { formatMoney } from "@/lib/format";
 import { CartLines, CartSummary, useCart } from "./cart";
 
@@ -150,7 +151,13 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
   }, []);
 
   useEffect(() => {
-    if (cart?.lines.length && step === "contact") track("checkout_started", { value: cart.totals.total, currency: cart.currency });
+    if (cart?.lines.length && step === "contact") {
+      track("checkout_started", {
+        value: cart.totals.total,
+        currency: cart.currency,
+        items: cart.lines.map((l) => ({ itemId: l.variantId, productId: l.productId, title: l.title, unitPrice: l.unitPrice, quantity: l.quantity })),
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(cart?.lines.length)]);
 
@@ -217,6 +224,8 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
   async function pay() {
     setBusy(true);
     setError(null);
+    // Consent, attribution and browser identifiers must be on the cart before the order is created.
+    await syncAttribution();
     const res = await fetch("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider }) });
     const body = (await res.json().catch(() => null)) as (PaymentStart & ApiErrorBody) | null;
     setBusy(false);
@@ -354,7 +363,8 @@ interface OrderStatusView {
   paymentStatus: string;
   currency: string;
   email: string | null;
-  totals: { total: string };
+  totals: { total: string; taxTotal: string; shippingTotal: string };
+  lines: { itemId: string; title: string; quantity: number; total: string }[];
 }
 
 /** Order result page: the payment redirect is only a hint; the order state decides. */
@@ -374,7 +384,15 @@ export function CheckoutComplete({ orderId, token, failedHint, locale }: { order
       setOrder(o);
       if (o.paymentStatus === "paid" && !sessionStorage.getItem(`sf_oc_${orderId}`)) {
         sessionStorage.setItem(`sf_oc_${orderId}`, "1");
-        track("order_completed", { orderId, value: o.totals.total, currency: o.currency });
+        track("order_completed", {
+          orderId,
+          orderNumber: o.number,
+          value: o.totals.total,
+          tax: o.totals.taxTotal,
+          shipping: o.totals.shippingTotal,
+          currency: o.currency,
+          items: o.lines.map((l) => ({ itemId: l.itemId, title: l.title, quantity: l.quantity, unitPrice: String(BigInt(l.total) / BigInt(Math.max(1, l.quantity))) })),
+        });
       }
       if (o.paymentStatus === "paid" || o.status === "cancelled" || tries > 30) return;
       setTimeout(() => setTries((x) => x + 1), 2000);

@@ -20,6 +20,7 @@
     "@altyapi/domains": "workspace:*",
     "@altyapi/events": "workspace:*",
     "@altyapi/inventory": "workspace:*",
+    "@altyapi/marketing": "workspace:*",
     "@altyapi/observability": "workspace:*",
     "@altyapi/orders": "workspace:*",
     "@altyapi/payments": "workspace:*",

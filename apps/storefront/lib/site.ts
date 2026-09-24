@@ -1,12 +1,13 @@
 import "server-only";
 import { cache } from "react";
 import type { SiteDto } from "@altyapi/theme-engine";
+import type { StorefrontSite } from "./tracking-types";
 import { fetchSite } from "./api";
 import { getTenant, localeFromPath } from "./tenant";
 import type { RenderCtx } from "@/components/context";
 
 /** Site for the current request in the locale implied by the path (memoized per request). */
-export const getSite = cache(async (): Promise<{ site: SiteDto; tenant: Awaited<ReturnType<typeof getTenant>> }> => {
+export const getSite = cache(async (): Promise<{ site: StorefrontSite; tenant: Awaited<ReturnType<typeof getTenant>> }> => {
   const tenant = await getTenant();
   const base = await fetchSite(tenant);
   const locale = localeFromPath(tenant.path, base.supportedLocales, base.defaultLocale);

@@ -26,6 +26,7 @@ export interface DomainEventMap {
   "customer.created": { customerId: string };
   "theme.published": { publicationId: string; themeVersionId: string };
   "page.published": { pageId: string; pageVersionId: string };
+  "tracking.updated": { version: number };
   "marketing.consent_changed": { customerId: string | null; anonymousId: string | null; categories: Record<string, boolean> };
   "geo.visibility_changed": { snapshotId: string; score: number; previousScore: number | null };
   "profit.margin_breached": { productId: string | null; campaignId: string | null; marginBps: number };

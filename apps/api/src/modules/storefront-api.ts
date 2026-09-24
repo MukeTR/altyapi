@@ -4,7 +4,7 @@ import { listSitemapEntries } from "@altyapi/catalog";
 import { channels, and, eq, withTenantTx } from "@altyapi/database";
 import { listLivePages, loadLiveSnapshot, loadSite, resolveRoute } from "@altyapi/theme-engine";
 import { AppError } from "@altyapi/commerce-core";
-import { subscribeNewsletter } from "@altyapi/marketing";
+import { publicTrackingConfig, recordCookieConsent, subscribeNewsletter } from "@altyapi/marketing";
 import type { AppDeps } from "../deps";
 import { storefrontContext } from "../plugins/storefront-auth";
 
@@ -27,9 +27,11 @@ export const storefrontApiRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = asy
       mediaBaseUrl: deps.env.MEDIA_PUBLIC_BASE_URL ?? null,
     });
     if (!site) throw new AppError("not_found", "errors.storefront.not_initialized");
+    // Tracking comes from the protected tracking layer, never from the theme or preview draft.
+    const tracking = await withTenantTx(deps.db, ctx, (tx) => publicTrackingConfig(tx, ctx.storeId));
     reply.header("cache-control", cacheHeader(ctx.preview, 30));
     reply.header("x-content-version", String(site.contentVersion));
-    return site;
+    return { ...site, tracking };
   });
 
   app.get(
@@ -71,6 +73,22 @@ export const storefrontApiRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = asy
         countryCode: store?.countryCode ?? "TR",
       });
       return reply.status(201).send({ status: result.status });
+    },
+  );
+
+  app.post(
+    "/storefront/v1/consent",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute", keyGenerator: (r) => String(r.headers["x-altyapi-client-ip"] ?? r.ip) } }, schema: { hide: true } },
+    async (req, reply) => {
+      const ctx = await storefrontContext(deps, req);
+      const ip = req.headers["x-altyapi-client-ip"];
+      const ua = req.headers["x-altyapi-client-ua"];
+      const result = await recordCookieConsent(deps.db, ctx, req.body, {
+        ip: typeof ip === "string" ? ip : null,
+        userAgent: typeof ua === "string" ? ua : null,
+        hashSecret: deps.env.APP_SIGNING_SECRET,
+      });
+      return reply.status(201).send(result);
     },
   );
 

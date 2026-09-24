@@ -1,5 +1,6 @@
 import "server-only";
-import type { ResolvedRoute, SiteDto } from "@altyapi/theme-engine";
+import type { ResolvedRoute } from "@altyapi/theme-engine";
+import type { StorefrontSite } from "./tracking-types";
 import { serverEnv } from "./env";
 import type { Tenant } from "./tenant";
 
@@ -33,13 +34,13 @@ async function sfFetch<T>(t: Tenant, path: string, params: URLSearchParams, reva
   return (await res.json()) as T;
 }
 
-export function fetchSite(t: Tenant, locale?: string): Promise<SiteDto> {
+export function fetchSite(t: Tenant, locale?: string): Promise<StorefrontSite> {
   const params = new URLSearchParams();
   if (locale) params.set("locale", locale);
-  return sfFetch<SiteDto>(t, "/storefront/v1/site", params, 10);
+  return sfFetch<StorefrontSite>(t, "/storefront/v1/site", params, 10);
 }
 
-export function fetchRoute(t: Tenant, site: SiteDto, path: string, query: URLSearchParams): Promise<ResolvedRoute> {
+export function fetchRoute(t: Tenant, site: StorefrontSite, path: string, query: URLSearchParams): Promise<ResolvedRoute> {
   const params = new URLSearchParams(query);
   params.delete("path");
   params.set("path", path);
