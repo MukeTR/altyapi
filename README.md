@@ -14,7 +14,7 @@ apps/
 packages/
   config/         Typed environment şemaları (Zod)
   observability/  Logger, correlation context, tracing
-  commerce-core/  Shared kernel: hatalar, ID, money (minor unit), pagination
+  commerce-core/  Shared kernel: hatalar, ID, money (minor unit), pagination, dil kaydı (locales)
   database/       Drizzle schema, migrations, tenant/platform transaction yardımcıları, RLS
   auth/           Kullanıcı, oturum, argon2id, rol/izin matrisi
   tenancy/        Organization, store, member servisleri ve StoreContext
@@ -22,6 +22,7 @@ packages/
   audit/          Redaksiyonlu audit log yazıcısı
   domains/        Custom domain yaşam döngüsü, Cloudflare for SaaS, edge routing
   storage/        R2 depolama, presigned upload, asset işleme, görsel preset'leri
+  content/        İçerik alan primitifleri (localized, richText, href, link, assetId) ve tek zengin metin sanitizer'ı
   theme-engine/   Section registry, tema token'ları, sayfalar, Draft → Preview → Publish, rollback
   marketing/      Pazarlama iletişim izinleri, consent kayıtları (KVKK/İYS)
   catalog/        Ürün, varyant, seçenek, medya, koleksiyon (manuel/otomatik), kategori, vergi sınıfı, arama
@@ -112,8 +113,20 @@ Cloudflare Image Transformations ile üretilir (`thumbnail`, `card`, `product`, 
 - Publish immutable `theme_versions` / `page_versions` ve yeni bir `publications` kaydı oluşturur;
   `storefront_state.active_publication_id` aynı transaction içinde değişir ve `stores.content_version` artar.
 - Rollback eski publication'ın sürümlerini kullanan yeni bir publication oluşturur.
-- Sayfa handle'ı değişince eski URL için otomatik 301 ve `slug_history` kaydı oluşur.
-- Landing page'ler zamanlanabilir (`publishAt` / `unpublishAt`); worker bunları yayınlar ya da kaldırır.
+- Her canlı işaretçi değişimi (yayın, yayından kaldırma, zamanlanmış yayın, rollback)
+  `storefront.publication_switched`, yönlendirme değişikliği `redirect.changed` olayını yazar; worker bunlarla
+  edge içerik sürümünü yeniler.
+- Vitrin sayfayı yayınlanmış sürümün handle'ıyla çözer; handle yalnız taslakta değiştiyse eski URL yayında kalır.
+  Canlı handle değişince (yayın veya rollback) eski URL için otomatik 301 ve `slug_history` kaydı oluşur.
+- Diller `commerce-core` dil kaydından gelir (tr, en, de, ar, ru, fr, fa, az, nl, uk, ka); `<html lang dir>`
+  bu kayıttan üretilir, ar ve fa sağdan sola (mantıksal CSS) gösterilir. hreflang ve sitemap yalnız sayfanın
+  kendi içeriği olan dilleri listeler; sitemap `lastmod` değerleri gerçek yayın/değişiklik zamanıdır.
+- Landing page'ler zamanlanabilir (`publishAt` / `unpublishAt`); worker bunları yayınlar ya da kaldırır. Her sayfa
+  ayrı transaction'da işlenir; platformun reddettiği bir sayfa (ör. handle'ı başka bir sayfanın canlı URL'si)
+  zamanlamadan çıkar (yayın taslağa döner), `page.schedule_failed` olayı ve audit kaydı yazılır, diğer sayfalar
+  etkilenmez. Bir URL tek sayfaya aittir: taslak handle'ları ve canlı handle'lar oluşturma, düzenleme,
+  geri al/yinele, zamanlama ve rollback'te birlikte denetlenir.
+- Sayfa API'si `path` (sayfanın vitrindeki adresi: yayındaysa canlı URL), `livePath` ve `draftPath` döner.
 - Önizleme: `POST …/storefront/preview-token`, 1 saat geçerli imzalı token.
 - Tema ayarları (`PUT …/storefront/theme`) tam doküman olarak gönderilir; eksik alanlar varsayılana döner.
 
@@ -130,6 +143,16 @@ Cloudflare Image Transformations ile üretilir (`thumbnail`, `card`, `product`, 
 - Fiyatlar tamsayı minor unit ve ISO para birimiyle `money_amounts` tablosunda tutulur. Uygulanabilir
   listeler `priority → tür → id` sırasıyla seçilir (kanal, müşteri grubu ve zaman penceresi kısıtları).
   Kampanya indirimleri fiyat çözümleyicide değil, sepet üzerinde kampanya motorunda uygulanır.
+- `price_history` her liste girdisinin (adet 1) uygulandığı dönemleri tutar; fiyat yazan her işlem aynı
+  transaction'da dönemi kapatıp yenisini açar. Vitrinde, sepette, siparişte ve ekosistem kataloğunda üstü çizili
+  "önceki fiyat", indirimin başlangıcından önceki 30 günün en düşük fiyatıdır (`PREVIOUS_PRICE_LOOKBACK_DAYS`)
+  ve yalnız güncel fiyattan yüksekse gösterilir; elle girilen `compare_at_amount` müşteriye gösterilmez.
+  İndirimin başlangıcı, güncel fiyatın yeniden uygulanmaya başladığı andır: öncelikli bir liste (flaş indirim,
+  silinen liste, kaldırılan girdi) bittiğinde başlangıç o ana taşınır; başlangıçtan sonra uygulanan daha düşük
+  bir fiyat da üstü çizili fiyatı kaldırır.
+- Sürüm notu (`0016_price_history`): geçiş, mevcut her fiyat için dönemi dağıtım anında başlatır; öncesindeki
+  fiyatlar bilinmediğinden, tutarı değişmeyen mevcut indirimler (ör. zamanlaması olmayan kalıcı indirim
+  listeleri) üstü çizili fiyat göstermez. Tutar bir sonraki değiştiğinde normal hesaplama başlar.
 
 ### Ürün içe aktarma (CSV / Excel / XML)
 

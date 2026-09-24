@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { listSitemapEntries } from "@altyapi/catalog";
 import { channels, and, eq, withTenantTx } from "@altyapi/database";
-import { listLivePages, loadLiveSnapshot, loadSite, resolveRoute } from "@altyapi/theme-engine";
+import { listLivePages, loadLiveSnapshot, loadSite, pageContentLocales, resolveRoute } from "@altyapi/theme-engine";
 import { AppError } from "@altyapi/commerce-core";
 import { publicTrackingConfig, recordCookieConsent, subscribeNewsletter } from "@altyapi/marketing";
 import type { AppDeps } from "../deps";
@@ -109,13 +109,22 @@ export const storefrontApiRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = asy
       channelId: store.channelId,
     });
     const pages = await listLivePages(deps.db, ctx, snapshot);
+    const { supportedLocales, defaultLocale } = store.s;
     reply.header("cache-control", cacheHeader(false, 3600));
     return {
       defaultLocale: store.s.defaultLocale,
       supportedLocales: store.s.supportedLocales,
       products: entries.products,
       collections: entries.collections,
-      pages: pages.filter((p) => !p.seo.noindex).map((p) => ({ type: p.type, handle: p.handle, updatedAt: p.createdAt })),
+      // updatedAt is when the live version started serving (a rollback counts); locales are the languages with content of their own.
+      pages: pages
+        .filter((p) => !p.seo.noindex)
+        .map((p) => ({
+          type: p.type,
+          handle: p.handle,
+          updatedAt: p.liveSince,
+          locales: pageContentLocales(p, supportedLocales, defaultLocale),
+        })),
     };
   });
 };

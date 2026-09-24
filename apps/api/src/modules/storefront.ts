@@ -17,6 +17,7 @@ import {
   listPages,
   listPublications,
   listRedirects,
+  livePagePaths,
   pagePath,
   publish,
   publishSchema,
@@ -34,18 +35,25 @@ import {
   upsertNavigationSchema,
   type PageRow,
 } from "@altyapi/theme-engine";
-import { assertCan } from "@altyapi/tenancy";
+import { assertCan, type StoreContext } from "@altyapi/tenancy";
 import type { AppDeps } from "../deps";
 import { storeContext } from "../plugins/auth";
 import { storeParams } from "./stores";
 
 const json = z.record(z.string(), z.unknown());
 
-const pageView = (p: PageRow) => ({
+/**
+ * path is where the page is reachable on the storefront: its live URL while it is published
+ * (a rename only in the draft does not move it), otherwise the URL it will go live under.
+ * livePath and draftPath give both sides explicitly.
+ */
+const pageView = (p: PageRow, livePaths: Map<string, string>) => ({
   id: p.id,
   type: p.type,
   handle: p.handle,
-  path: pagePath(p.type, p.handle),
+  path: livePaths.get(p.id) ?? pagePath(p.type, p.handle),
+  livePath: livePaths.get(p.id) ?? null,
+  draftPath: pagePath(p.type, p.handle),
   title: p.title,
   status: p.status,
   draftContent: p.draftContent as unknown as Record<string, unknown>,
@@ -64,6 +72,8 @@ const pageSchema = z.object({
   type: z.string(),
   handle: z.string(),
   path: z.string().nullable(),
+  livePath: z.string().nullable(),
+  draftPath: z.string().nullable(),
   title: z.record(z.string(), z.string()),
   status: z.string(),
   draftContent: json,
@@ -101,6 +111,10 @@ const pageParams = storeParams.extend({ pageId: z.uuid() });
 
 export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async (app, { deps }) => {
   const base = "/v1/organizations/:organizationId/stores/:storeId/storefront";
+  const withLivePath = async (ctx: StoreContext, load: (ctx: StoreContext) => Promise<PageRow>) => {
+    const page = await load(ctx);
+    return pageView(page, await livePagePaths(deps.db, ctx, [page.id]));
+  };
 
   app.get("/v1/section-definitions", { schema: { tags: ["storefront"] } }, async () => ({
     items: SECTION_DEFINITIONS.map((d) => ({
@@ -148,25 +162,31 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
         response: { 200: z.object({ items: z.array(pageSchema) }) },
       },
     },
-    async (req) => ({ items: (await listPages(deps.db, await storeContext(deps, req), req.query)).map(pageView) }),
+    async (req) => {
+      const ctx = await storeContext(deps, req);
+      const rows = await listPages(deps.db, ctx, req.query);
+      const live = await livePagePaths(deps.db, ctx, rows.map((r) => r.id));
+      return { items: rows.map((r) => pageView(r, live)) };
+    },
   );
 
   app.post(
     `${base}/pages`,
     { schema: { tags: ["storefront"], params: storeParams, body: createPageSchema, response: { 201: pageSchema } } },
-    async (req, reply) => reply.status(201).send(pageView(await createPage(deps.db, await storeContext(deps, req), req.body))),
+    // A new page is never live yet.
+    async (req, reply) => reply.status(201).send(pageView(await createPage(deps.db, await storeContext(deps, req), req.body), new Map())),
   );
 
   app.get(
     `${base}/pages/:pageId`,
     { schema: { tags: ["storefront"], params: pageParams, response: { 200: pageSchema } } },
-    async (req) => pageView(await getPage(deps.db, await storeContext(deps, req), req.params.pageId)),
+    async (req) => withLivePath(await storeContext(deps, req), (ctx) => getPage(deps.db, ctx, req.params.pageId)),
   );
 
   app.put(
     `${base}/pages/:pageId`,
     { schema: { tags: ["storefront"], params: pageParams, body: updatePageSchema, response: { 200: pageSchema } } },
-    async (req) => pageView(await updatePageDraft(deps.db, await storeContext(deps, req), req.params.pageId, req.body)),
+    async (req) => withLivePath(await storeContext(deps, req), (ctx) => updatePageDraft(deps.db, ctx, req.params.pageId, req.body)),
   );
 
   app.delete(
@@ -181,7 +201,7 @@ export const storefrontRoutes: FastifyPluginAsyncZod<{ deps: AppDeps }> = async 
   app.put(
     `${base}/pages/:pageId/schedule`,
     { schema: { tags: ["storefront"], params: pageParams, body: schedulePageSchema, response: { 200: pageSchema } } },
-    async (req) => pageView(await schedulePage(deps.db, await storeContext(deps, req), req.params.pageId, req.body)),
+    async (req) => withLivePath(await storeContext(deps, req), (ctx) => schedulePage(deps.db, ctx, req.params.pageId, req.body)),
   );
 
   app.post(

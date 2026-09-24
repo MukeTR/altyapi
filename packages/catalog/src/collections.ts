@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { conflict, invalid, newId, notFound, slugify } from "@altyapi/commerce-core";
+import { LOCALE_CODES, assertStoreLocales, conflict, invalid, newId, notFound, slugify } from "@altyapi/commerce-core";
 import {
   and,
   asc,
@@ -27,6 +27,7 @@ import {
   type Transaction,
 } from "@altyapi/database";
 import { recordAudit } from "@altyapi/audit";
+import { appendEvent, type DomainEventMap } from "@altyapi/events";
 import { setAssetReferences } from "@altyapi/storage";
 import { assertCan, type StoreContext } from "@altyapi/tenancy";
 import { localizedPath, sanitizeDescription } from "./text";
@@ -43,8 +44,8 @@ const ruleSchema = z.object({
 
 export const collectionInputSchema = z.object({
   type: z.enum(["manual", "automated"]),
-  translations: z.record(
-    z.string().regex(/^[a-z]{2}$/),
+  translations: z.partialRecord(
+    z.enum(LOCALE_CODES),
     z.object({
       title: z.string().trim().min(1).max(200),
       handle: z.string().trim().toLowerCase().max(200).optional(),
@@ -220,10 +221,21 @@ async function uniqueCollectionHandle(tx: Transaction, storeId: string, locale: 
   throw conflict("errors.collection.handle_exhausted");
 }
 
+/**
+ * Every storefront-visible collection change bumps the content version (part of every cache
+ * key) and announces itself, so the edge picks up the new version (worker edge-content-version).
+ */
+async function collectionChanged(tx: Transaction, scope: Scope, collectionId: string, change: DomainEventMap["collection.changed"]["change"]): Promise<void> {
+  await tx.execute(sql`update stores set content_version = content_version + 1 where id = ${scope.storeId}`);
+  await appendEvent(tx, { type: "collection.changed", ...scope, aggregateType: "collection", aggregateId: collectionId, payload: { collectionId, change } });
+}
+
 export async function saveCollection(db: Database, ctx: StoreContext, input: z.infer<typeof collectionInputSchema>, collectionId?: string) {
   assertCan(ctx, "catalog:write");
   validateRules(input);
-  if (!input.translations[ctx.store.defaultLocale]) throw invalid("errors.collection.default_locale_required");
+  if (!input.translations[ctx.store.defaultLocale as keyof typeof input.translations]) throw invalid("errors.collection.default_locale_required");
+  // Translations (and the localized URLs and 301s they create) only in the store's languages.
+  assertStoreLocales(input.translations, ctx.store.supportedLocales, "translations");
   const scope = scopeOf(ctx);
   const id = collectionId ?? newId();
   await withTenantTx(db, scope, async (tx) => {
@@ -276,7 +288,7 @@ export async function saveCollection(db: Database, ctx: StoreContext, input: z.i
       await tx.insert(collectionRules).values({ id: newId(), ...scope, collectionId: id, field: r.field, operator: r.operator, attributeKey: r.attributeKey ?? null, value: r.value });
     }
     await setAssetReferences(tx, scope, { type: "collection", id }, input.imageAssetId ? [input.imageAssetId] : []);
-    await tx.execute(sql`update stores set content_version = content_version + 1 where id = ${ctx.storeId}`);
+    await collectionChanged(tx, scope, id, previous ? "updated" : "created");
     await recordAudit(tx, { action: previous ? "collection.updated" : "collection.created", resourceType: "collection", resourceId: id, after: { type: input.type, rules: input.rules.length } });
   });
   if (input.type === "automated") await materializeCollection(db, scope, id);
@@ -331,6 +343,7 @@ export async function deleteCollection(db: Database, ctx: StoreContext, collecti
     await setAssetReferences(tx, scopeOf(ctx), { type: "collection", id: collectionId }, []);
     // Incremental ekosistem content consumers learn about the deletion from the tombstone.
     await recordTombstone(tx, { ...scopeOf(ctx), resource: "content", ref: collectionId });
+    await collectionChanged(tx, scopeOf(ctx), collectionId, "deleted");
     await recordAudit(tx, { action: "collection.deleted", resourceType: "collection", resourceId: collectionId });
   });
 }
@@ -352,7 +365,7 @@ export async function setCollectionProducts(db: Database, ctx: StoreContext, col
     for (const [position, productId] of input.productIds.entries()) {
       await tx.insert(productCollections).values({ collectionId, productId, ...scopeOf(ctx), position }).onConflictDoNothing();
     }
-    await tx.execute(sql`update stores set content_version = content_version + 1 where id = ${ctx.storeId}`);
+    await collectionChanged(tx, scopeOf(ctx), collectionId, "products");
   });
 }
 

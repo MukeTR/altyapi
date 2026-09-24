@@ -23,7 +23,7 @@ export function MobileMenu({ links, label, closeLabel }: { links: ResolvedLink[]
                 <li key={l.href + l.label}>
                   <a href={l.href}>{l.label}</a>
                   {l.children && (
-                    <ul className="ml-4 mt-2 flex flex-col gap-2 text-base text-muted-fg">
+                    <ul className="ms-4 mt-2 flex flex-col gap-2 text-base text-muted-fg">
                       {l.children.map((c) => (
                         <li key={c.href + c.label}>
                           <a href={c.href}>{c.label}</a>

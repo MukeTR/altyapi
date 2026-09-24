@@ -38,7 +38,7 @@ const loops = [
       { name: "domains.schedule-checks", intervalMs: 30_000, run: () => scheduleDomainChecks(deps) },
       { name: "edge.flush-content-versions", intervalMs: 5_000, run: () => flushEdgeContentVersions(deps) },
       { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
-      { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db) },
+      { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db, deps.logger) },
       ...catalogScheduledTasks(deps),
       ...orderScheduledTasks(deps),
       ...integrationScheduledTasks(deps),

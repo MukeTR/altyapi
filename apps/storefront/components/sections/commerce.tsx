@@ -8,21 +8,34 @@ import { ProductCard, ProductGridList } from "../ui/product-card";
 import { JsonLd } from "../ui/json-ld";
 import { ProductPurchase } from "../client/product-purchase";
 import { CartPage } from "../client/cart";
+import type { HeadingTag } from "./render";
 import { SectionShell } from "./shell";
 
-export function ProductGrid({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+const gridProducts = (s: RenderSection) => ((s.data?.products as ProductCardDto[] | undefined) ?? []).slice(0, Number(s.props.limit ?? 12));
+
+export const productGridHeading = (s: RenderSection, ctx: RenderCtx) => (gridProducts(s).length ? L(ctx, s.props.heading) : "");
+
+export function ProductGrid({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
-  const products = ((s.data?.products as ProductCardDto[] | undefined) ?? []).slice(0, Number(p.limit ?? 12));
+  const products = gridProducts(s);
   if (!products.length) return null;
+  const heading = L(ctx, p.heading);
   return (
     <SectionShell s={s} ctx={ctx}>
-      {L(ctx, p.heading) && <h2 className="mb-6 text-2xl">{L(ctx, p.heading)}</h2>}
+      {heading && <H className="mb-6 text-2xl">{heading}</H>}
       <ProductGridList ctx={ctx} products={products} columnsDesktop={Number(p.columnsDesktop ?? 4)} columnsMobile={Number(p.columnsMobile ?? 2)} />
     </SectionShell>
   );
 }
 
-export function FeaturedCollection({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+/** The heading falls back to the collection title, so a rendered section always has one. */
+export const featuredCollectionHeading = (s: RenderSection, ctx: RenderCtx) => {
+  const col = s.data?.collection as { title: string } | null;
+  const products = (s.data?.products as ProductCardDto[] | undefined) ?? [];
+  return col && products.length ? L(ctx, s.props.heading) || col.title : "";
+};
+
+export function FeaturedCollection({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
   const col = s.data?.collection as { title: string; path: string } | null;
   const products = (s.data?.products as ProductCardDto[] | undefined) ?? [];
@@ -30,7 +43,7 @@ export function FeaturedCollection({ s, ctx }: { s: RenderSection; ctx: RenderCt
   return (
     <SectionShell s={s} ctx={ctx}>
       <div className="mb-6 flex items-end justify-between gap-4">
-        <h2 className="text-2xl">{L(ctx, p.heading) || col.title}</h2>
+        <H className="text-2xl">{featuredCollectionHeading(s, ctx)}</H>
         {Boolean(p.showViewAll) && (
           <a href={col.path} className="text-sm underline underline-offset-4">
             {t(ctx.locale, "viewAll")}
@@ -52,20 +65,27 @@ export function FeaturedCollection({ s, ctx }: { s: RenderSection; ctx: RenderCt
   );
 }
 
-export function CategoryCards({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
-  const p = s.props as Record<string, unknown>;
+function categoryCards(s: RenderSection, ctx: RenderCtx) {
   const cols = (s.data?.collections as Record<string, { title: string; path: string; imageObjectKey: string | null }> | undefined) ?? {};
-  const cards = s.blocks.flatMap((b) => {
+  return s.blocks.flatMap((b) => {
     const c = cols[String(b.props.collectionId)];
     if (!c) return [];
     const override = b.props.imageAssetId ? ctx.route?.assets[String(b.props.imageAssetId)] ?? null : null;
     return [{ id: b.id, title: L(ctx, b.props.label) || c.title, path: c.path, image: override ?? c.imageObjectKey }];
   });
+}
+
+export const categoryCardsHeading = (s: RenderSection, ctx: RenderCtx) => (categoryCards(s, ctx).length ? L(ctx, s.props.heading) : "");
+
+export function CategoryCards({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
+  const p = s.props as Record<string, unknown>;
+  const cards = categoryCards(s, ctx);
   if (!cards.length) return null;
+  const heading = L(ctx, p.heading);
   const desktop = ({ 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4", 5: "lg:grid-cols-5", 6: "lg:grid-cols-6" } as Record<number, string>)[Number(p.columnsDesktop ?? 4)];
   return (
     <SectionShell s={s} ctx={ctx}>
-      {L(ctx, p.heading) && <h2 className="mb-6 text-2xl">{L(ctx, p.heading)}</h2>}
+      {heading && <H className="mb-6 text-2xl">{heading}</H>}
       <ul className={`grid grid-cols-2 gap-4 md:grid-cols-3 ${desktop}`}>
         {cards.map((c) => (
           <li key={c.id}>
@@ -109,6 +129,8 @@ function productJsonLd(ctx: RenderCtx, product: ProductDetailDto) {
   };
 }
 
+export const productMainOwnsH1 = (s: RenderSection) => Boolean(s.data?.product);
+
 export function ProductMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   const p = s.props as Record<string, unknown>;
   const product = s.data?.product as ProductDetailDto | undefined;
@@ -149,7 +171,11 @@ export function ProductMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
             currency={ctx.currency}
             labels={{ soldOut: t(ctx.locale, "soldOut"), lowStock: t(ctx.locale, "lowStock"), addToCart: t(ctx.locale, "addToCart") }}
           />
-          {Boolean(p.showSku) && product.variants[0]?.sku && <p className="text-xs text-muted-fg">SKU: {product.variants[0].sku}</p>}
+          {Boolean(p.showSku) && product.variants[0]?.sku && (
+            <p className="text-xs text-muted-fg">
+              {t(ctx.locale, "sku")}: {product.variants[0].sku}
+            </p>
+          )}
           {product.descriptionHtml && <div className="prose-theme" dangerouslySetInnerHTML={{ __html: product.descriptionHtml }} />}
           {product.attributes.length > 0 && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-line pt-4 text-sm">
@@ -227,8 +253,8 @@ function ListingControls({ ctx, listing, showFilters, showSort, keepQuery }: { c
         <>
           <fieldset className="flex items-end gap-2">
             <legend className="mb-1 text-muted-fg">{t(ctx.locale, "priceRange")}</legend>
-            <input name="price_min" inputMode="decimal" defaultValue={decimal(sp.get("price_min"))} placeholder="min" className="w-24 rounded-theme border border-line bg-surface px-3 py-2" aria-label="min" />
-            <input name="price_max" inputMode="decimal" defaultValue={decimal(sp.get("price_max"))} placeholder="max" className="w-24 rounded-theme border border-line bg-surface px-3 py-2" aria-label="max" />
+            <input name="price_min" inputMode="decimal" defaultValue={decimal(sp.get("price_min"))} placeholder={t(ctx.locale, "priceMin")} className="w-24 rounded-theme border border-line bg-surface px-3 py-2" aria-label={t(ctx.locale, "priceMin")} />
+            <input name="price_max" inputMode="decimal" defaultValue={decimal(sp.get("price_max"))} placeholder={t(ctx.locale, "priceMax")} className="w-24 rounded-theme border border-line bg-surface px-3 py-2" aria-label={t(ctx.locale, "priceMax")} />
           </fieldset>
           <label className="flex items-center gap-2 py-2">
             <input type="checkbox" name="in_stock" value="1" defaultChecked={sp.get("in_stock") === "1"} />
@@ -243,17 +269,19 @@ function ListingControls({ ctx, listing, showFilters, showSort, keepQuery }: { c
       <button type="submit" className="btn btn-primary">
         {t(ctx.locale, "apply")}
       </button>
-      <span className="ml-auto text-muted-fg">{t(ctx.locale, "results", { n: listing.total })}</span>
+      <span className="ms-auto text-muted-fg">{t(ctx.locale, "results", { n: listing.total })}</span>
     </form>
   );
 }
+
+export const collectionMainOwnsH1 = (s: RenderSection) => Boolean(s.data?.listing);
 
 export function CollectionMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   const p = s.props as Record<string, unknown>;
   const listing = s.data?.listing as ListingDto | undefined;
   const collection = s.data?.collection as CollectionDto | null;
   if (!listing) return null;
-  const title = collection?.title ?? (ctx.locale === "en" ? "All products" : "Tüm ürünler");
+  const title = collection?.title ?? t(ctx.locale, "allProducts");
   const base = P(ctx, `/collections/${collection?.handle ?? "all"}`);
   return (
     <SectionShell s={s} ctx={ctx}>
@@ -282,14 +310,17 @@ export function CollectionMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx })
 export function SearchMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   const listing = s.data?.listing as ListingDto | undefined;
   const query = String(s.data?.query ?? "");
+  const hasResults = Boolean(query && listing);
   return (
     <SectionShell s={s} ctx={ctx}>
+      {/* The page H1 names the query once there is one; before that the page is the search itself. */}
+      {!hasResults && <h1 className="mb-6 text-2xl">{t(ctx.locale, "search")}</h1>}
       <form method="get" role="search" className="mb-8 flex max-w-xl gap-2">
         <label htmlFor="search-q" className="sr-only">{t(ctx.locale, "search")}</label>
         <input id="search-q" type="search" name="q" defaultValue={query} placeholder={t(ctx.locale, "searchPlaceholder")} className="flex-1 rounded-theme border border-line bg-surface px-3 py-2" />
         <button type="submit" className="btn btn-primary">{t(ctx.locale, "search")}</button>
       </form>
-      {query && listing && (
+      {hasResults && listing && (
         <>
           <h1 className="mb-6 text-2xl">
             “{query}” · {t(ctx.locale, "results", { n: listing.total })}

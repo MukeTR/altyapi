@@ -35,7 +35,7 @@ export function ProductPurchase({
 
   return (
     <ProductOptions product={product} initialVariantId={initialVariantId} picker={picker} locale={locale} labels={labels}>
-      {(variant) => <AddToCart variantId={variant?.id ?? null} available={Boolean(variant?.available)} label={labels.addToCart} soldOutLabel={labels.soldOut} />}
+      {(variant) => <AddToCart variantId={variant?.id ?? null} available={Boolean(variant?.available)} label={labels.addToCart} soldOutLabel={labels.soldOut} locale={locale} />}
     </ProductOptions>
   );
 }

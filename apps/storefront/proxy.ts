@@ -1,8 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { isLocaleCode } from "@altyapi/commerce-core/locales";
 
 const EDGE_MAX_SKEW_SECONDS = 60;
 const PREVIEW_COOKIE = "altyapi_preview";
+/** Checkout under a language prefix (/ar/checkout, /ar/checkout/complete): app/checkout renders it in that language. */
+const LOCALIZED_CHECKOUT = /^\/([a-z]{2})(\/checkout(?:\/.*)?)$/;
 /** Paths whose HTML is identical for every visitor and may be cached at the edge. */
 const UNCACHEABLE = /^\/(?:[a-z]{2}\/)?(?:cart|checkout|account|api|search)(?:\/|$)/;
 
@@ -61,7 +64,12 @@ export function proxy(request: NextRequest) {
 
   headers.set("x-sf-path", url.pathname);
   headers.set("x-sf-search", url.search);
-  const response = NextResponse.next({ request: { headers } });
+  // x-sf-path keeps the prefix, so the site (and the checkout UI) resolve in the page language.
+  const checkout = LOCALIZED_CHECKOUT.exec(url.pathname);
+  const response =
+    checkout && isLocaleCode(checkout[1])
+      ? NextResponse.rewrite(new URL(`${checkout[2]}${url.search}`, request.url), { request: { headers } })
+      : NextResponse.next({ request: { headers } });
   const inPreview = request.cookies.has(PREVIEW_COOKIE);
   if (request.method === "GET" && !inPreview && !UNCACHEABLE.test(url.pathname)) {
     // Shared caches (Cloudflare) may keep the HTML briefly; browsers always revalidate.

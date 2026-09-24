@@ -279,7 +279,14 @@ interface SaveResult {
  * Persists the full product aggregate (translations, options, variants, prices, costs,
  * media, tags, collections, channel listings). Used by create, update and imports.
  */
-export async function saveProductAggregate(tx: Transaction, ctx: StoreContext, input: ProductInput, existingId?: string): Promise<SaveResult> {
+export async function saveProductAggregate(
+  tx: Transaction,
+  ctx: StoreContext,
+  input: ProductInput,
+  existingId?: string,
+  /** price_history source of the variant prices; defaults to the principal of the running operation. */
+  priceSource?: string,
+): Promise<SaveResult> {
   assertLocales(ctx, input);
   planVariants(ctx, input);
   await validateReferences(tx, ctx, input);
@@ -437,7 +444,7 @@ export async function saveProductAggregate(tx: Transaction, ctx: StoreContext, i
     }
   }
   const baseList = await tx.query.priceLists.findFirst({ where: eq(priceLists.id, basePriceListId) });
-  await upsertPriceEntries(tx, scope, baseList!, priceEntries);
+  await upsertPriceEntries(tx, scope, baseList!, priceEntries, false, priceSource);
 
   // Media
   await tx.delete(productMedia).where(eq(productMedia.productId, productId));

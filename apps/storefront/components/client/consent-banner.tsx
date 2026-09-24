@@ -3,24 +3,29 @@
 import { useEffect, useState } from "react";
 import { anonymousId, currentConsent, saveConsent, type ConsentState } from "@/lib/client/consent";
 import { clearTouches } from "@/lib/client/attribution";
+import { pickDictionary, type UiDictionaries } from "@/lib/ui-locale";
 
-const TEXT = {
-  tr: {
-    title: "Çerez tercihleri",
-    body: "Sitenin çalışması için zorunlu çerezleri kullanıyoruz. İzin verirseniz ziyaretleri ölçmek (analitik), size uygun reklamlar göstermek (pazarlama) ve deneyimi kişiselleştirmek için ek çerezler kullanırız. Tercihinizi istediğiniz zaman değiştirebilirsiniz.",
-    acceptAll: "Tümünü kabul et",
-    rejectAll: "Yalnızca zorunlu",
-    customize: "Tercihleri yönet",
-    save: "Seçimi kaydet",
-    necessary: "Zorunlu",
-    necessaryHint: "Sepet, oturum ve güvenlik. Kapatılamaz.",
-    analytics: "Analitik",
-    analyticsHint: "Ziyaret ve performans ölçümü (ör. Google Analytics).",
-    marketing: "Pazarlama",
-    marketingHint: "Reklam ölçümü ve yeniden hedefleme (ör. Meta, TikTok, Google Ads).",
-    personalization: "Kişiselleştirme",
-    personalizationHint: "Size özel öneriler ve içerik.",
-  },
+const TEXT_TR = {
+  title: "Çerez tercihleri",
+  body: "Sitenin çalışması için zorunlu çerezleri kullanıyoruz. İzin verirseniz ziyaretleri ölçmek (analitik), size uygun reklamlar göstermek (pazarlama) ve deneyimi kişiselleştirmek için ek çerezler kullanırız. Tercihinizi istediğiniz zaman değiştirebilirsiniz.",
+  acceptAll: "Tümünü kabul et",
+  rejectAll: "Yalnızca zorunlu",
+  customize: "Tercihleri yönet",
+  save: "Seçimi kaydet",
+  necessary: "Zorunlu",
+  necessaryHint: "Sepet, oturum ve güvenlik. Kapatılamaz.",
+  analytics: "Analitik",
+  analyticsHint: "Ziyaret ve performans ölçümü (ör. Google Analytics).",
+  marketing: "Pazarlama",
+  marketingHint: "Reklam ölçümü ve yeniden hedefleme (ör. Meta, TikTok, Google Ads).",
+  personalization: "Kişiselleştirme",
+  personalizationHint: "Size özel öneriler ve içerik.",
+};
+
+// The shown text is stored with each choice as consent evidence, so every language
+// states the same categories and purposes.
+const TEXT: UiDictionaries<typeof TEXT_TR> = {
+  tr: TEXT_TR,
   en: {
     title: "Cookie preferences",
     body: "We use necessary cookies to run this site. With your permission we also use cookies to measure visits (analytics), show relevant ads (marketing) and personalize your experience. You can change your choice at any time.",
@@ -37,6 +42,70 @@ const TEXT = {
     personalization: "Personalization",
     personalizationHint: "Recommendations and content tailored to you.",
   },
+  de: {
+    title: "Cookie-Einstellungen",
+    body: "Wir verwenden notwendige Cookies, damit diese Website funktioniert. Mit Ihrer Einwilligung verwenden wir außerdem Cookies, um Besuche zu messen (Analyse), relevante Werbung anzuzeigen (Marketing) und Ihr Erlebnis zu personalisieren. Sie können Ihre Auswahl jederzeit ändern.",
+    acceptAll: "Alle akzeptieren",
+    rejectAll: "Nur notwendige",
+    customize: "Einstellungen verwalten",
+    save: "Auswahl speichern",
+    necessary: "Notwendig",
+    necessaryHint: "Warenkorb, Sitzung und Sicherheit. Immer aktiv.",
+    analytics: "Analyse",
+    analyticsHint: "Messung von Besuchen und Leistung (z. B. Google Analytics).",
+    marketing: "Marketing",
+    marketingHint: "Werbemessung und Retargeting (z. B. Meta, TikTok, Google Ads).",
+    personalization: "Personalisierung",
+    personalizationHint: "Auf Sie zugeschnittene Empfehlungen und Inhalte.",
+  },
+  ar: {
+    title: "تفضيلات ملفات تعريف الارتباط",
+    body: "نستخدم ملفات تعريف الارتباط الضرورية لتشغيل هذا الموقع. وبموافقتك، نستخدم أيضًا ملفات تعريف ارتباط لقياس الزيارات (التحليلات)، وعرض إعلانات ملائمة (التسويق)، وتخصيص تجربتك. يمكنك تغيير اختيارك في أي وقت.",
+    acceptAll: "قبول الكل",
+    rejectAll: "الضرورية فقط",
+    customize: "إدارة التفضيلات",
+    save: "حفظ الاختيار",
+    necessary: "ضرورية",
+    necessaryHint: "السلة والجلسة والأمان. مفعّلة دائمًا.",
+    analytics: "التحليلات",
+    analyticsHint: "قياس الزيارات والأداء (مثل Google Analytics).",
+    marketing: "التسويق",
+    marketingHint: "قياس الإعلانات وإعادة الاستهداف (مثل Meta وTikTok وGoogle Ads).",
+    personalization: "التخصيص",
+    personalizationHint: "توصيات ومحتوى مخصّص لك.",
+  },
+  ru: {
+    title: "Настройки cookie",
+    body: "Мы используем необходимые файлы cookie для работы сайта. С вашего согласия мы также используем cookie для измерения посещаемости (аналитика), показа релевантной рекламы (маркетинг) и персонализации. Вы можете изменить свой выбор в любое время.",
+    acceptAll: "Принять все",
+    rejectAll: "Только необходимые",
+    customize: "Настроить",
+    save: "Сохранить выбор",
+    necessary: "Необходимые",
+    necessaryHint: "Корзина, сеанс и безопасность. Всегда включены.",
+    analytics: "Аналитика",
+    analyticsHint: "Измерение посещаемости и производительности (например, Google Analytics).",
+    marketing: "Маркетинг",
+    marketingHint: "Измерение эффективности рекламы и ретаргетинг (например, Meta, TikTok, Google Ads).",
+    personalization: "Персонализация",
+    personalizationHint: "Рекомендации и контент, подобранные для вас.",
+  },
+  fr: {
+    title: "Préférences de cookies",
+    body: "Nous utilisons des cookies nécessaires au fonctionnement de ce site. Avec votre accord, nous utilisons également des cookies pour mesurer la fréquentation (statistiques), afficher des publicités pertinentes (marketing) et personnaliser votre expérience. Vous pouvez modifier votre choix à tout moment.",
+    acceptAll: "Tout accepter",
+    rejectAll: "Nécessaires uniquement",
+    customize: "Gérer les préférences",
+    save: "Enregistrer mon choix",
+    necessary: "Nécessaires",
+    necessaryHint: "Panier, session et sécurité. Toujours actifs.",
+    analytics: "Statistiques",
+    analyticsHint: "Mesure de la fréquentation et des performances (p. ex. Google Analytics).",
+    marketing: "Marketing",
+    marketingHint: "Mesure publicitaire et reciblage (p. ex. Meta, TikTok, Google Ads).",
+    personalization: "Personnalisation",
+    personalizationHint: "Recommandations et contenus adaptés à vos centres d'intérêt.",
+  },
 };
 
 type Choice = Pick<ConsentState, "analytics" | "marketing" | "personalization">;
@@ -46,7 +115,7 @@ type Choice = Pick<ConsentState, "analytics" | "marketing" | "personalization">;
  * changes cannot remove it or alter its behavior. Choices are stored as evidence.
  */
 export function ConsentBanner({ policyVersion: initialVersion, locale }: { policyVersion: string; locale: string }) {
-  const tx = locale === "en" ? TEXT.en : TEXT.tr;
+  const tx = pickDictionary(TEXT, locale);
   const [policyVersion, setPolicyVersion] = useState(initialVersion);
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -148,7 +217,7 @@ export function ConsentPreferencesLink({ locale }: { locale: string }) {
   return (
     <div className="container-theme py-3 text-center text-xs text-muted-fg">
       <button type="button" className="underline" onClick={() => window.dispatchEvent(new Event("sf:open-consent"))}>
-        {locale === "en" ? TEXT.en.title : TEXT.tr.title}
+        {pickDictionary(TEXT, locale).title}
       </button>
     </div>
   );

@@ -141,6 +141,9 @@ importers:
 
   apps/storefront:
     dependencies:
+      '@altyapi/commerce-core':
+        specifier: workspace:*
+        version: link:../../packages/commerce-core
       next:
         specifier: ^16.3.6
         version: 16.3.6(@opentelemetry/api@1.9.1)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -302,6 +305,9 @@ importers:
       '@altyapi/commerce-core':
         specifier: workspace:*
         version: link:../commerce-core
+      '@altyapi/content':
+        specifier: workspace:*
+        version: link:../content
       '@altyapi/database':
         specifier: workspace:*
         version: link:../database
@@ -332,16 +338,9 @@ importers:
       fast-xml-parser:
         specifier: ^5.11.1
         version: 5.11.1
-      sanitize-html:
-        specifier: ^2.17.7
-        version: 2.17.7
       zod:
         specifier: ^4.6.5
         version: 4.6.5
-    devDependencies:
-      '@types/sanitize-html':
-        specifier: ^2.16.1
-        version: 2.16.1
 
   packages/checkout:
     dependencies:
@@ -408,6 +407,22 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  packages/content:
+    dependencies:
+      '@altyapi/commerce-core':
+        specifier: workspace:*
+        version: link:../commerce-core
+      sanitize-html:
+        specifier: ^2.17.7
+        version: 2.17.7
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/sanitize-html':
+        specifier: ^2.16.1
+        version: 2.16.1
 
   packages/database:
     dependencies:
@@ -814,6 +829,9 @@ importers:
       '@altyapi/commerce-core':
         specifier: workspace:*
         version: link:../commerce-core
+      '@altyapi/content':
+        specifier: workspace:*
+        version: link:../content
       '@altyapi/database':
         specifier: workspace:*
         version: link:../database
@@ -829,16 +847,9 @@ importers:
       '@altyapi/tenancy':
         specifier: workspace:*
         version: link:../tenancy
-      sanitize-html:
-        specifier: ^2.17.7
-        version: 2.17.7
       zod:
         specifier: ^4.6.5
         version: 4.6.5
-    devDependencies:
-      '@types/sanitize-html':
-        specifier: ^2.16.1
-        version: 2.16.1
 
 packages:
 

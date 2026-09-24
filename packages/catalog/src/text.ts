@@ -1,22 +1,12 @@
-import sanitizeHtml from "sanitize-html";
+import { htmlToPlainText, sanitizeDescriptionHtml } from "@altyapi/content";
 
-/** Product/collection descriptions allow a wider tag set than section rich text (tables, images). */
-export const DESCRIPTION_HTML_OPTIONS: sanitizeHtml.IOptions = {
-  allowedTags: [
-    "p", "br", "strong", "b", "em", "i", "u", "s", "a", "ul", "ol", "li", "h2", "h3", "h4", "h5",
-    "blockquote", "span", "hr", "table", "thead", "tbody", "tr", "th", "td", "img", "figure", "figcaption",
-  ],
-  allowedAttributes: { a: ["href", "target", "rel"], img: ["src", "alt", "width", "height"], td: ["colspan", "rowspan"], th: ["colspan", "rowspan"] },
-  allowedSchemes: ["https", "mailto", "tel"],
-  allowedSchemesByTag: { img: ["https"] },
-};
-
+/** Product/collection descriptions use the platform rich-text allow-list in its catalog profile (with images). */
 export function sanitizeDescription(html: string): string {
-  return sanitizeHtml(html, DESCRIPTION_HTML_OPTIONS);
+  return sanitizeDescriptionHtml(html);
 }
 
 export function stripHtml(html: string): string {
-  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} }).replace(/\s+/g, " ").trim();
+  return htmlToPlainText(html);
 }
 
 const TR_FOLD: Record<string, string> = { ç: "c", ğ: "g", ı: "i", i̇: "i", ö: "o", ş: "s", ü: "u", â: "a", î: "i", û: "u" };
@@ -46,6 +36,7 @@ export function toPrefixTsQuery(q: string): string | null {
   return terms.length ? terms.join(" & ") : null;
 }
 
+/** Storefront path in a locale: the default locale has no prefix, and a prefixed home is `/en`, not `/en/` (which redirects). */
 export function localizedPath(locale: string, defaultLocale: string, path: string): string {
-  return locale === defaultLocale ? path : `/${locale}${path}`;
+  return locale === defaultLocale ? path : `/${locale}${path === "/" ? "" : path}`;
 }

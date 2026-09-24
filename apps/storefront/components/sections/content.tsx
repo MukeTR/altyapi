@@ -6,6 +6,7 @@ import { Slider } from "../client/slider";
 import { Countdown } from "../client/countdown";
 import { NewsletterForm } from "../client/newsletter-form";
 import { JsonLd } from "../ui/json-ld";
+import type { HeadingTag } from "./render";
 import { SectionShell } from "./shell";
 
 type Link = { label: Record<string, string>; href: string; openInNewTab?: boolean } | null;
@@ -47,12 +48,15 @@ export function assetKey(ctx: RenderCtx, assetId: string): string | null {
 }
 
 const HEIGHT: Record<string, string> = { small: "min-h-[40vh]", medium: "min-h-[55vh]", large: "min-h-[70vh]", full: "min-h-[100svh]" };
-const ALIGN: Record<string, string> = { left: "items-start text-left", center: "items-center text-center", right: "items-end text-right" };
+// "left"/"right" are stored as chosen in a left-to-right editor; they map to the inline start
+// and end so right-to-left pages mirror the layout.
+const ALIGN: Record<string, string> = { left: "items-start text-start", center: "items-center text-center", right: "items-end text-end" };
 
-export function Hero({ s, ctx, index }: { s: RenderSection; ctx: RenderCtx; index: number }) {
+export const heroHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function Hero({ s, ctx, index, heading: H }: { s: RenderSection; ctx: RenderCtx; index: number; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
-  const heading = L(ctx, p.heading);
-  const H = index === 0 && ctx.route?.kind === "home" ? "h1" : "h2";
+  const heading = heroHeading(s, ctx);
   return (
     <SectionShell s={{ ...s, settings: { paddingTop: { mobile: 0, desktop: 0 }, paddingBottom: { mobile: 0, desktop: 0 }, ...s.settings } }} ctx={ctx} fullWidthDefault>
       <div className={`relative flex ${HEIGHT[String(p.height)] ?? HEIGHT.large} overflow-hidden`}>
@@ -108,12 +112,20 @@ export function ImageBanner({ s, ctx, index }: { s: RenderSection; ctx: RenderCt
   );
 }
 
-export function SliderSection({ s, ctx, index }: { s: RenderSection; ctx: RenderCtx; index: number }) {
+const slideBlocks = (s: RenderSection) => s.blocks.filter((b) => b.type === "slide");
+
+/** The first slide's heading is the one visible on load; later slides are secondary. */
+export const sliderHeading = (s: RenderSection, ctx: RenderCtx) => {
+  const first = slideBlocks(s)[0];
+  return first ? L(ctx, first.props.heading) : "";
+};
+
+export function SliderSection({ s, ctx, index, heading }: { s: RenderSection; ctx: RenderCtx; index: number; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
-  const slides = s.blocks
-    .filter((b) => b.type === "slide")
+  const slides = slideBlocks(s)
     .map((b, i) => {
       const bp = b.props;
+      const H = i === 0 ? heading : "h2";
       return (
         <div key={b.id} className={`relative flex ${HEIGHT[String(p.height)] ?? HEIGHT.large}`}>
           <ResponsiveImage
@@ -125,7 +137,7 @@ export function SliderSection({ s, ctx, index }: { s: RenderSection; ctx: Render
             className="absolute inset-0 h-full w-full object-cover"
           />
           <div className="container-theme relative z-10 flex w-full flex-col items-center justify-center gap-4 text-center text-white [text-shadow:0_1px_8px_rgb(0_0_0/0.4)]">
-            {L(ctx, bp.heading) && <h2 className="text-3xl lg:text-5xl">{L(ctx, bp.heading)}</h2>}
+            {L(ctx, bp.heading) && <H className="text-3xl lg:text-5xl">{L(ctx, bp.heading)}</H>}
             {L(ctx, bp.subheading) && <p className="text-lg">{L(ctx, bp.subheading)}</p>}
             <Cta ctx={ctx} link={bp.cta as Link} />
           </div>
@@ -140,7 +152,7 @@ export function SliderSection({ s, ctx, index }: { s: RenderSection; ctx: Render
         intervalSeconds={Number(p.intervalSeconds ?? 6)}
         showArrows={Boolean(p.showArrows)}
         showDots={Boolean(p.showDots)}
-        labels={{ previous: t(ctx.locale, "previous"), next: t(ctx.locale, "next"), slide: "Slide" }}
+        labels={{ previous: t(ctx.locale, "previous"), next: t(ctx.locale, "next"), slide: t(ctx.locale, "slide") }}
       />
     </SectionShell>
   );
@@ -148,12 +160,15 @@ export function SliderSection({ s, ctx, index }: { s: RenderSection; ctx: Render
 
 const WIDTH: Record<string, string> = { narrow: "max-w-2xl", medium: "max-w-3xl", wide: "max-w-5xl" };
 
-export function RichText({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+export const richTextHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function RichText({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
+  const heading = richTextHeading(s, ctx);
   return (
     <SectionShell s={s} ctx={ctx}>
-      <div className={`mx-auto ${WIDTH[String(p.maxWidth)] ?? WIDTH.medium} ${p.alignment === "center" ? "text-center" : p.alignment === "right" ? "text-right" : ""}`}>
-        {L(ctx, p.heading) && <h2 className="mb-4 text-3xl">{L(ctx, p.heading)}</h2>}
+      <div className={`mx-auto ${WIDTH[String(p.maxWidth)] ?? WIDTH.medium} ${p.alignment === "center" ? "text-center" : p.alignment === "right" ? "text-end" : ""}`}>
+        {heading && <H className="mb-4 text-3xl">{heading}</H>}
         {/* Stored rich text is sanitized on save (allow-list). */}
         <div className="prose-theme" dangerouslySetInnerHTML={{ __html: L(ctx, p.body) }} />
       </div>
@@ -161,9 +176,12 @@ export function RichText({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
 }
 
-export function ImageWithText({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+export const imageWithTextHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function ImageWithText({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
   const key = p.imageAssetId ? assetKey(ctx, String(p.imageAssetId)) : null;
+  const heading = imageWithTextHeading(s, ctx);
   return (
     <SectionShell s={s} ctx={ctx}>
       <div className={`grid items-center gap-8 lg:grid-cols-2 ${p.imagePosition === "right" ? "lg:[&>*:first-child]:order-2" : ""}`}>
@@ -171,7 +189,7 @@ export function ImageWithText({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) 
           {key && <img src={mediaUrl(ctx.mediaBase, key, "product") ?? undefined} srcSet={srcSet(ctx.mediaBase, key, "product")} sizes="(min-width:1024px) 50vw, 100vw" alt="" loading="lazy" className="h-full w-full object-cover" />}
         </div>
         <div className="flex flex-col gap-4">
-          {L(ctx, p.heading) && <h2 className="text-3xl">{L(ctx, p.heading)}</h2>}
+          {heading && <H className="text-3xl">{heading}</H>}
           <div className="prose-theme" dangerouslySetInnerHTML={{ __html: L(ctx, p.body) }} />
           <div>
             <Cta ctx={ctx} link={p.cta as Link} />
@@ -201,54 +219,65 @@ function embedUrl(url: string, autoplay: boolean, loop: boolean): string | null 
   return null;
 }
 
-export function Video({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+type VideoSource = { kind: "asset"; key: string; posterKey: string | null } | { kind: "embed"; src: string };
+
+/** What the video section can play; null when the asset is missing or the URL is not allowed. */
+function videoSource(s: RenderSection, ctx: RenderCtx): VideoSource | null {
   const p = s.props as Record<string, unknown>;
-  const autoplay = Boolean(p.autoplay);
-  const loop = Boolean(p.loop);
-  let player = null;
   if (p.source === "asset" && p.assetId) {
     const key = assetKey(ctx, String(p.assetId));
-    const poster = p.posterAssetId ? assetKey(ctx, String(p.posterAssetId)) : null;
-    if (key) {
-      player = (
-        <video
-          className="w-full rounded-theme"
-          src={mediaUrl(ctx.mediaBase, key) ?? undefined}
-          poster={poster ? mediaUrl(ctx.mediaBase, poster, "hero-desktop") ?? undefined : undefined}
-          controls={!autoplay}
-          autoPlay={autoplay}
-          muted={autoplay}
-          loop={loop}
-          playsInline
-          preload="metadata"
-        />
-      );
-    }
-  } else if (p.url) {
-    const src = embedUrl(String(p.url), autoplay, loop);
-    if (src) {
-      player = (
-        <div className="aspect-video overflow-hidden rounded-theme">
-          <iframe src={src} title={L(ctx, p.heading) || "Video"} className="h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen loading="lazy" />
-        </div>
-      );
-    }
+    return key ? { kind: "asset", key, posterKey: p.posterAssetId ? assetKey(ctx, String(p.posterAssetId)) : null } : null;
   }
-  if (!player) return null;
+  if (p.url) {
+    const src = embedUrl(String(p.url), Boolean(p.autoplay), Boolean(p.loop));
+    return src ? { kind: "embed", src } : null;
+  }
+  return null;
+}
+
+export const videoHeading = (s: RenderSection, ctx: RenderCtx) => (videoSource(s, ctx) ? L(ctx, s.props.heading) : "");
+
+export function Video({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
+  const p = s.props as Record<string, unknown>;
+  const autoplay = Boolean(p.autoplay);
+  const source = videoSource(s, ctx);
+  if (!source) return null;
+  const heading = L(ctx, p.heading);
+  const player =
+    source.kind === "asset" ? (
+      <video
+        className="w-full rounded-theme"
+        src={mediaUrl(ctx.mediaBase, source.key) ?? undefined}
+        poster={source.posterKey ? mediaUrl(ctx.mediaBase, source.posterKey, "hero-desktop") ?? undefined : undefined}
+        controls={!autoplay}
+        autoPlay={autoplay}
+        muted={autoplay}
+        loop={Boolean(p.loop)}
+        playsInline
+        preload="metadata"
+      />
+    ) : (
+      <div className="aspect-video overflow-hidden rounded-theme">
+        <iframe src={source.src} title={heading || t(ctx.locale, "video")} className="h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen loading="lazy" />
+      </div>
+    );
   return (
     <SectionShell s={s} ctx={ctx}>
-      {L(ctx, p.heading) && <h2 className="mb-6 text-center text-3xl">{L(ctx, p.heading)}</h2>}
+      {heading && <H className="mb-6 text-center text-3xl">{heading}</H>}
       {player}
     </SectionShell>
   );
 }
 
-export function Testimonials({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+export const testimonialsHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function Testimonials({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
   const items = s.blocks.filter((b) => b.type === "testimonial");
+  const heading = testimonialsHeading(s, ctx);
   return (
     <SectionShell s={s} ctx={ctx}>
-      {L(ctx, p.heading) && <h2 className="mb-8 text-center text-3xl">{L(ctx, p.heading)}</h2>}
+      {heading && <H className="mb-8 text-center text-3xl">{heading}</H>}
       <ul className={p.layout === "grid" ? "grid gap-6 md:grid-cols-2 lg:grid-cols-3" : "flex snap-x snap-mandatory gap-6 overflow-x-auto pb-4"}>
         {items.map((b) => {
           const avatar = b.props.avatarAssetId ? assetKey(ctx, String(b.props.avatarAssetId)) : null;
@@ -256,7 +285,7 @@ export function Testimonials({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
           return (
             <li key={b.id} className={`flex flex-col gap-4 rounded-theme border border-line p-6 ${p.layout === "grid" ? "" : "w-80 shrink-0 snap-start"}`}>
               {rating ? (
-                <p aria-label={`${rating}/5`} className="text-sale">
+                <p aria-label={t(ctx.locale, "rating", { n: rating })} className="text-sale">
                   {"★".repeat(rating)}
                   <span className="text-muted-fg">{"★".repeat(5 - rating)}</span>
                 </p>
@@ -277,11 +306,14 @@ export function Testimonials({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
 }
 
-export function LogoCloud({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+export const logoCloudHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function LogoCloud({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
+  const heading = logoCloudHeading(s, ctx);
   return (
     <SectionShell s={s} ctx={ctx}>
-      {L(ctx, p.heading) && <h2 className="mb-8 text-center text-2xl">{L(ctx, p.heading)}</h2>}
+      {heading && <H className="mb-8 text-center text-2xl">{heading}</H>}
       <ul className="flex flex-wrap items-center justify-center gap-10">
         {s.blocks
           .filter((b) => b.type === "logo")
@@ -296,17 +328,20 @@ export function LogoCloud({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
 }
 
-export function Newsletter({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+export const newsletterHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function Newsletter({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
+  const heading = newsletterHeading(s, ctx);
   return (
     <SectionShell s={s} ctx={ctx}>
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 text-center">
-        {L(ctx, p.heading) && <h2 className="text-3xl">{L(ctx, p.heading)}</h2>}
+        {heading && <H className="text-3xl">{heading}</H>}
         {L(ctx, p.body) && <p className="text-muted-fg">{L(ctx, p.body)}</p>}
         <NewsletterForm
           placeholder={L(ctx, p.placeholder) || t(ctx.locale, "email")}
           buttonLabel={L(ctx, p.buttonLabel) || t(ctx.locale, "subscribe")}
-          successMessage={L(ctx, p.successMessage) || "✓"}
+          successMessage={L(ctx, p.successMessage) || t(ctx.locale, "thankYou")}
           consentHtml={L(ctx, p.consentText)}
           source={`section:${s.id}`}
           locale={ctx.locale}
@@ -316,13 +351,16 @@ export function Newsletter({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
 }
 
-export function Faq({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+export const faqHeading = (s: RenderSection, ctx: RenderCtx) => L(ctx, s.props.heading);
+
+export function Faq({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
   const items = s.blocks.filter((b) => b.type === "item").map((b) => ({ id: b.id, q: L(ctx, b.props.question), a: L(ctx, b.props.answer) }));
+  const heading = faqHeading(s, ctx);
   return (
     <SectionShell s={s} ctx={ctx}>
       <div className="mx-auto max-w-3xl">
-        {L(ctx, p.heading) && <h2 className="mb-6 text-3xl">{L(ctx, p.heading)}</h2>}
+        {heading && <H className="mb-6 text-3xl">{heading}</H>}
         <div className="divide-y divide-line border-y border-line">
           {items.map((i) => (
             <details key={i.id} className="group py-4">
@@ -348,14 +386,18 @@ export function Faq({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
 }
 
-export function CountdownSection({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+const countdownHidden = (s: RenderSection) => s.props.expiredBehavior === "hide" && Date.parse(String(s.props.endsAt)) <= Date.now();
+
+export const countdownHeading = (s: RenderSection, ctx: RenderCtx) => (countdownHidden(s) ? "" : L(ctx, s.props.heading));
+
+export function CountdownSection({ s, ctx, heading: H }: { s: RenderSection; ctx: RenderCtx; heading: HeadingTag }) {
   const p = s.props as Record<string, unknown>;
-  const ended = Date.parse(String(p.endsAt)) <= Date.now();
-  if (ended && p.expiredBehavior === "hide") return null;
+  if (countdownHidden(s)) return null;
+  const heading = L(ctx, p.heading);
   return (
     <SectionShell s={s} ctx={ctx}>
       <div className="flex flex-col items-center gap-4 text-center">
-        {L(ctx, p.heading) && <h2 className="text-2xl">{L(ctx, p.heading)}</h2>}
+        {heading && <H className="text-2xl">{heading}</H>}
         <Countdown
           endsAt={String(p.endsAt)}
           expiredBehavior={p.expiredBehavior === "show_message" ? "show_message" : "hide"}

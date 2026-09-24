@@ -8,6 +8,7 @@ import {
   orders,
   pages,
   products,
+  publications,
   sql,
   withPlatformTx,
   withTenantTx,
@@ -38,8 +39,9 @@ export const PUSH_SOURCE_EVENTS = [
   "order.cancelled",
   "order.fulfilled",
   "refund.completed",
-  "theme.published",
-  "page.published",
+  // Every live storefront change (publish, unpublish, scheduled publishing, rollback) moves
+  // the publication pointer, so this one event covers theme and page changes.
+  "storefront.publication_switched",
 ] as const satisfies readonly DomainEventType[];
 
 const PUSH_BACKOFF_BASE_MS = 60_000;
@@ -98,14 +100,29 @@ export async function pushTargetFor(tx: DbExecutor, event: Pick<EventEnvelope, "
       const orderId = id("orderId");
       return orderId && (await isServedOrder(tx, storeId, orderId)) ? { type: "altyapi.order.updated", ref: orderId } : null;
     }
-    case "page.published": {
-      const pageId = id("pageId");
-      if (!pageId) return null;
-      const [p] = await tx.select({ type: pages.type }).from(pages).where(and(eq(pages.id, pageId), eq(pages.storeId, storeId)));
-      return p && (p.type === "home" || p.type === "page" || p.type === "landing") ? { type: "altyapi.content.updated", ref: pageId } : null;
-    }
-    case "theme.published": {
-      // A theme change re-renders every page; the home page stands for the content set.
+    case "storefront.publication_switched": {
+      const publicationId = id("publicationId");
+      const previousId = id("previousPublicationId");
+      // The initial publication is created with the store, before any link can exist.
+      if (!publicationId || !previousId) return null;
+      const rows = await tx
+        .select({ id: publications.id, themeVersionId: publications.themeVersionId, pageVersions: publications.pageVersions })
+        .from(publications)
+        .where(and(eq(publications.storeId, storeId), inArray(publications.id, [publicationId, previousId])));
+      const current = rows.find((r) => r.id === publicationId);
+      const previous = rows.find((r) => r.id === previousId);
+      if (!current || !previous) return null;
+      const changed = [...new Set([...Object.keys(previous.pageVersions), ...Object.keys(current.pageVersions)])].filter(
+        (pageId) => previous.pageVersions[pageId] !== current.pageVersions[pageId],
+      );
+      if (!changed.length && current.themeVersionId === previous.themeVersionId) return null;
+      const changedPages = changed.length
+        ? await tx.select({ id: pages.id, type: pages.type }).from(pages).where(and(eq(pages.storeId, storeId), inArray(pages.id, changed)))
+        : [];
+      // One content page changed: push that page. A theme or template change, several pages or a
+      // deleted page re-render more than one URL; the home page then stands for the content set.
+      const only = changedPages.length === 1 && changed.length === 1 && current.themeVersionId === previous.themeVersionId ? changedPages[0]! : null;
+      if (only && (only.type === "home" || only.type === "page" || only.type === "landing")) return { type: "altyapi.content.updated", ref: only.id };
       const [home] = await tx.select({ id: pages.id }).from(pages).where(and(eq(pages.storeId, storeId), eq(pages.type, "home"))).limit(1);
       return home ? { type: "altyapi.content.updated", ref: home.id } : null;
     }

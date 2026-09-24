@@ -38,7 +38,7 @@ export function AnnouncementBar({
         <button
           type="button"
           aria-label={closeLabel}
-          className="absolute right-3 top-1/2 -translate-y-1/2 px-2"
+          className="absolute end-3 top-1/2 -translate-y-1/2 px-2"
           onClick={() => {
             setDismissed(true);
             try {

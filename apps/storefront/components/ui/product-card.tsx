@@ -36,7 +36,7 @@ export function ProductCard({ ctx, product, priority = false }: { ctx: RenderCtx
             className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100"
           />
         )}
-        <span className="absolute left-2 top-2 flex gap-1 text-xs font-semibold">
+        <span className="absolute start-2 top-2 flex gap-1 text-xs font-semibold">
           {product.onSale && <span className="rounded bg-sale px-2 py-0.5 text-white">{t(ctx.locale, "sale")}</span>}
           {!product.available && <span className="rounded bg-fg px-2 py-0.5 text-surface">{t(ctx.locale, "soldOut")}</span>}
         </span>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { fontHref, getSite, renderCtx } from "@/lib/site";
-import { t } from "@/lib/i18n";
+import { htmlAttributes, t } from "@/lib/i18n";
 import { mediaUrl } from "@/lib/media";
 import { Sections } from "@/components/sections/render";
 import { CartDrawer, CartProvider } from "@/components/client/cart";
@@ -33,8 +33,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // theme sections, so no design change can remove or alter them. Previews never track.
   // `tracking` may be absent while an older API version is still serving during a rollout.
   const tracking = !site.preview && site.tracking && hasTrackers(site.tracking) ? site.tracking : null;
+  const { lang, dir } = htmlAttributes(site.locale);
   return (
-    <html lang={site.locale}>
+    <html lang={lang} dir={dir}>
       <head>
         {fonts && <link rel="stylesheet" href={fonts} />}
         {/* Theme tokens are validated (hex colors, enum fonts) so this CSS cannot be injected into. */}
@@ -55,22 +56,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <p className="mt-4 text-muted-fg">{t(site.locale, "storeClosed")}</p>
           </main>
         ) : (
-          <CartProvider>
+          <CartProvider basePath={site.locale === site.defaultLocale ? "" : `/${site.locale}`}>
             <Sections sections={before} ctx={ctx} />
             <main id="main">{children}</main>
             <Sections sections={after} ctx={ctx} />
             <Sections sections={overlays} ctx={ctx} />
-            <CartDrawer
-              locale={site.locale}
-              mediaBase={site.mediaBaseUrl}
-              labels={{
-                cart: t(site.locale, "cart"),
-                close: t(site.locale, "close"),
-                checkout: site.locale === "en" ? "Checkout" : "Ödemeye geç",
-                viewCart: site.locale === "en" ? "View cart" : "Sepete git",
-                empty: site.locale === "en" ? "Your cart is empty." : "Sepetiniz boş.",
-              }}
-            />
+            <CartDrawer locale={site.locale} mediaBase={site.mediaBaseUrl} />
           </CartProvider>
         )}
         {tracking && (

@@ -24,7 +24,7 @@ import {
   type Transaction,
 } from "@altyapi/database";
 import { getStockForVariants } from "@altyapi/inventory";
-import { latestCosts, resolvePrices } from "@altyapi/pricing";
+import { latestCosts, resolveDisplayPrices } from "@altyapi/pricing";
 import type { DiscountEngine, DiscountResult } from "./discounts";
 import { rateForCart } from "./shipping";
 
@@ -41,6 +41,7 @@ export interface CalculatedLine {
   imageObjectKey: string | null;
   quantity: number;
   unitPrice: bigint;
+  /** Lawful previous price (price_history reference) when higher than unitPrice; quantity tiers never have one. */
   compareAtUnitPrice: bigint | null;
   unitCost: bigint | null;
   subtotal: bigint;
@@ -101,7 +102,9 @@ export async function calculateCart(tx: Transaction, cart: CartRow, engine: Disc
     productIds.length
       ? tx.select().from(productTranslations).where(and(inArray(productTranslations.productId, productIds), inArray(productTranslations.locale, [cart.locale, opts.defaultLocale])))
       : Promise.resolve([]),
-    resolvePrices(tx, { storeId: cart.storeId, currency: cart.currency, channelId: cart.channelId, customerGroupIds: groupIds }, lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity }))),
+    // Same unit price as resolvePrices; the compare-at shown in the cart and frozen on the order
+    // is the price_history previous price, never the merchant-typed compare-at.
+    resolveDisplayPrices(tx, { storeId: cart.storeId, currency: cart.currency, channelId: cart.channelId, customerGroupIds: groupIds }, lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity }))),
     getStockForVariants(tx, { organizationId: cart.organizationId, storeId: cart.storeId }, variantIds),
     latestCosts(tx, cart.storeId, variantIds, cart.currency),
     productIds.length
@@ -156,7 +159,7 @@ export async function calculateCart(tx: Transaction, cart: CartRow, engine: Disc
       imageObjectKey: img?.objectKey ?? null,
       quantity: l.quantity,
       unitPrice,
-      compareAtUnitPrice: price?.compareAtAmount ?? null,
+      compareAtUnitPrice: price?.previousAmount ?? null,
       unitCost: costs.get(l.variantId) ?? null,
       subtotal: unitPrice * BigInt(l.quantity),
       discount: 0n,

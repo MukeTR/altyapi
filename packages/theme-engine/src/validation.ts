@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { newId } from "@altyapi/commerce-core";
+import { isLocaleCode, newId } from "@altyapi/commerce-core";
 import type { PageContent, SectionInstance } from "@altyapi/database";
 import { getSectionDefinition, SECTION_DEFINITIONS, type PageTypeName } from "./sections/definitions";
 
@@ -8,9 +8,10 @@ export const MAX_SECTIONS_PER_PAGE = 60;
 /**
  * Design content may never carry executable code. Pixels, analytics and other scripts belong
  * to the protected tracking layer; rich text is sanitized and this guard rejects anything that
- * still looks like code in any prop (e.g. pasted embed snippets in plain text fields).
+ * still looks like code in any prop (e.g. pasted embed snippets in plain text fields),
+ * including image tags: a noscript tracking pixel is an <img>.
  */
-const CODE_PATTERN = /<\s*\/?\s*(script|iframe|object|embed|link|meta|style|base|form)\b|javascript\s*:|vbscript\s*:|data\s*:\s*text\/html|<[^>]*\son[a-z]+\s*=/i;
+const CODE_PATTERN = /<\s*\/?\s*(script|iframe|object|embed|link|meta|style|base|form|img)\b|javascript\s*:|vbscript\s*:|data\s*:\s*text\/html|<[^>]*\son[a-z]+\s*=/i;
 
 /** True when a text would be rejected by the code guard (for callers that build content from external text). */
 export function containsCode(value: string): boolean {
@@ -171,6 +172,28 @@ export function validatePageContent(
   }
 
   return issues.length ? { ok: false, issues } : { ok: true, content: { sections } };
+}
+
+/**
+ * Localized text maps (`{ tr: "…", en: "…" }`: every key a registry locale code, every value
+ * text) anywhere in the section and block props of a tree, with their content paths.
+ */
+export function localizedTextMaps(content: PageContent): { path: string; map: Record<string, string> }[] {
+  const out: { path: string; map: Record<string, string> }[] = [];
+  const visit = (value: unknown, path: string) => {
+    if (Array.isArray(value)) value.forEach((v, i) => visit(v, `${path}.${i}`));
+    else if (value && typeof value === "object") {
+      const entries = Object.entries(value);
+      if (entries.length && entries.every(([k, v]) => isLocaleCode(k) && (typeof v === "string" || v === undefined))) {
+        out.push({ path, map: value as Record<string, string> });
+      } else for (const [k, v] of entries) visit(v, `${path}.${k}`);
+    }
+  };
+  content.sections.forEach((s, i) => {
+    visit(s.props, `sections.${i}.props`);
+    (s.blocks ?? []).forEach((b, j) => visit(b.props, `sections.${i}.blocks.${j}.props`));
+  });
+  return out;
 }
 
 /** Asset ids referenced anywhere in a tree (for asset reference tracking). */

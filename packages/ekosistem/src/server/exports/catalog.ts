@@ -26,7 +26,7 @@ import {
 } from "@altyapi/database";
 import { stripHtml } from "@altyapi/catalog";
 import { getStockForVariants } from "@altyapi/inventory";
-import { resolvePrices } from "@altyapi/pricing";
+import { resolveDisplayPrices } from "@altyapi/pricing";
 import { imageUrl } from "@altyapi/storage";
 import { EkosistemError } from "../../errors";
 import { wireMoney, wireMoneyOrNull, type WireMoney } from "../../money";
@@ -206,7 +206,8 @@ async function buildProducts(tx: Transaction, ec: ExportContext, ids: string[], 
     : [];
   const variantIds = variants.map((v) => v.id);
   const [prices, stock, costRows] = await Promise.all([
-    resolvePrices(tx, { storeId, currency: ec.identity.defaultCurrency, channelId: ec.channelId, customerGroupIds: [], at: ec.now }, variantIds.map((variantId) => ({ variantId }))),
+    // The storefront price and previous price (price_history reference), never the typed compare-at.
+    resolveDisplayPrices(tx, { storeId, currency: ec.identity.defaultCurrency, channelId: ec.channelId, customerGroupIds: [], at: ec.now }, variantIds.map((variantId) => ({ variantId }))),
     getStockForVariants(tx, { organizationId: ec.identity.organizationId, storeId }, variantIds),
     ec.withCosts && variantIds.length
       ? tx
@@ -260,7 +261,7 @@ async function buildProducts(tx: Transaction, ec: ExportContext, ids: string[], 
         barcode: v.barcode,
         title: labels.filter(Boolean).join(" / ") || title,
         price: price ? wireMoney(price.amount, ec.identity.defaultCurrency) : null,
-        compareAtPrice: price ? wireMoneyOrNull(price.compareAtAmount, ec.identity.defaultCurrency) : null,
+        compareAtPrice: price ? wireMoneyOrNull(price.previousAmount, ec.identity.defaultCurrency) : null,
         // Unresolved tax class: the rate is unknown (null), prices are charged as tax-inclusive like checkout does.
         taxRateBps: tax ? tax.rateBps : null,
         taxIncluded: tax ? tax.pricesIncludeTax : true,

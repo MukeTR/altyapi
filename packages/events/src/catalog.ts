@@ -14,6 +14,10 @@ export interface DomainEventMap {
   "product.updated": { productId: string; fields: string[] };
   /** Hard delete (never-published drafts); an ekosistem tombstone is written in the same transaction. */
   "product.deleted": { productId: string };
+  /** A collection was saved, its manual membership was set, or it was deleted. */
+  "collection.changed": { collectionId: string; change: "created" | "updated" | "products" | "deleted" };
+  /** Store settings changed (name, locales, currencies, status…); fields lists the submitted setting keys. */
+  "store.settings_updated": { fields: string[]; contentVersion: number };
   "inventory.changed": { inventoryItemId: string; locationId: string; variantId: string; available: number };
   "cart.abandoned": { cartId: string; customerId: string | null; email: string | null };
   "checkout.started": { cartId: string; orderId: string };
@@ -28,6 +32,30 @@ export interface DomainEventMap {
   "customer.created": { customerId: string };
   "theme.published": { publicationId: string; themeVersionId: string };
   "page.published": { pageId: string; pageVersionId: string };
+  /**
+   * A scheduled publish or unpublish of a page was refused (errorKey, e.g. a handle another
+   * page is served under) and the page left the schedule so the merchant can fix it.
+   */
+  "page.schedule_failed": { pageId: string; operation: "publish" | "unpublish"; errorKey: string; details: Record<string, unknown> };
+  /**
+   * The live storefront pointer moved to another publication (publish, unpublish, scheduled
+   * publishing or rollback). contentVersion is the store's content version after the switch.
+   */
+  "storefront.publication_switched": {
+    publicationId: string;
+    previousPublicationId: string | null;
+    number: number;
+    reason: string;
+    contentVersion: number;
+  };
+  /** A merchant redirect was created, changed or removed; contentVersion is the store's content version after it. */
+  "redirect.changed": {
+    redirectId: string;
+    fromPath: string;
+    toPath: string | null;
+    change: "created" | "updated" | "deleted";
+    contentVersion: number;
+  };
   "tracking.updated": { version: number };
   "marketing.consent_changed": { customerId: string | null; anonymousId: string | null; categories: Record<string, boolean> };
   /**

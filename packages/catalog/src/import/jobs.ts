@@ -481,7 +481,7 @@ export async function runImportChunk(deps: ImportRunDeps, scope: Scope, jobId: s
               const existing = await getProductTx(tx, ctx, existingId);
               const merged = mergeIntoExisting(existing, product, locale);
               if (product.input.categoryId) merged.input.categoryId = product.input.categoryId;
-              await saveProductAggregate(tx, ctx, merged.input, existingId);
+              await saveProductAggregate(tx, ctx, merged.input, existingId, "import");
               const after = await getProductTx(tx, ctx, existingId);
               for (const s of merged.stockUpdates) {
                 const sku = merged.input.variants[s.variantIndex]!.sku;
@@ -493,7 +493,7 @@ export async function runImportChunk(deps: ImportRunDeps, scope: Scope, jobId: s
               updated++;
               return existingId;
             }
-            const { productId: id } = await saveProductAggregate(tx, ctx, product.input);
+            const { productId: id } = await saveProductAggregate(tx, ctx, product.input, undefined, "import");
             created++;
             return id;
           });

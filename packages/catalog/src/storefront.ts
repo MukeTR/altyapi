@@ -25,7 +25,7 @@ import {
   type Transaction,
 } from "@altyapi/database";
 import { getStockForVariants } from "@altyapi/inventory";
-import { resolvePrices, type PriceContext } from "@altyapi/pricing";
+import { discountedVariantSql, resolveDisplayPrices, type PriceContext } from "@altyapi/pricing";
 import { toPrefixTsQuery } from "./text";
 
 export interface StorefrontRef {
@@ -56,6 +56,12 @@ export interface VariantDto {
   sku: string | null;
   title: string;
   optionValueIds: string[];
+  /**
+   * compareAtAmount is the previous price to strike through, derived from price_history
+   * (Ticari Reklam: the lowest price applied in the lookback window before the discount);
+   * null when no reduction can be shown. The merchant-typed compare-at column is kept for
+   * admin editing and integrations but is never exposed here.
+   */
   price: { amount: string; compareAtAmount: string | null; currency: string } | null;
   available: boolean;
   /** Exact quantity only when low (≤ 5) so storefronts can show "last 3 items". */
@@ -72,9 +78,11 @@ export interface ProductCardDto {
   secondaryImage: MediaDto | null;
   priceMin: string | null;
   priceMax: string | null;
+  /** History-derived previous price of the priceMin variant(s); see VariantDto.price. */
   compareAtMin: string | null;
   currency: string;
   available: boolean;
+  /** Some variant currently shows a history-derived previous price. */
   onSale: boolean;
   defaultVariantId: string | null;
   hasMultipleVariants: boolean;
@@ -129,7 +137,7 @@ async function loadCards(tx: Transaction, ctx: StorefrontQueryContext, productId
   const variantIds = variants.map((v) => v.id);
   const priceCtx: PriceContext = { storeId: ctx.storeId, currency: ctx.currency, channelId: ctx.channelId, customerGroupIds: ctx.customerGroupIds ?? [] };
   const [prices, stock] = await Promise.all([
-    resolvePrices(tx, priceCtx, variantIds.map((variantId) => ({ variantId }))),
+    resolveDisplayPrices(tx, priceCtx, variantIds.map((variantId) => ({ variantId }))),
     getStockForVariants(tx, ctx, variantIds),
   ]);
   const toMedia = (x: { m: typeof productMedia.$inferSelect; a: typeof contentAssets.$inferSelect }): MediaDto => ({
@@ -149,7 +157,6 @@ async function loadCards(tx: Transaction, ctx: StorefrontQueryContext, productId
     const priced = vs.map((v) => prices.get(v.id)).filter((p): p is NonNullable<typeof p> => !!p);
     if (!priced.length) return []; // not sellable in this currency/channel
     const amounts = priced.map((p) => p.amount);
-    const compare = priced.map((p) => p.compareAtAmount).filter((c): c is bigint => c !== null);
     const available = vs.some((v) => {
       const s = stock.get(v.id);
       return !s || !s.tracked || s.allowBackorder || s.available > 0;
@@ -157,6 +164,9 @@ async function loadCards(tx: Transaction, ctx: StorefrontQueryContext, productId
     const imgs = media.filter((m) => m.m.productId === id).sort((a, b) => a.m.position - b.m.position);
     const min = amounts.reduce((a, b) => (a < b ? a : b));
     const max = amounts.reduce((a, b) => (a > b ? a : b));
+    // The card strikes through the previous price of the variant it shows ("from" priceMin);
+    // a pricier variant's reduction must not read as a reduction of the cheapest one.
+    const previous = priced.filter((p) => p.amount === min && p.previousAmount !== null).map((p) => p.previousAmount!);
     return [
       {
         id,
@@ -167,10 +177,10 @@ async function loadCards(tx: Transaction, ctx: StorefrontQueryContext, productId
         secondaryImage: imgs[1] ? toMedia(imgs[1]) : null,
         priceMin: min.toString(),
         priceMax: max.toString(),
-        compareAtMin: compare.length ? compare.reduce((a, b) => (a < b ? a : b)).toString() : null,
+        compareAtMin: previous.length ? previous.reduce((a, b) => (a < b ? a : b)).toString() : null,
         currency: ctx.currency,
         available,
-        onSale: compare.length > 0,
+        onSale: priced.some((p) => p.previousAmount !== null),
         defaultVariantId: vs[0]?.id ?? null,
         hasMultipleVariants: vs.length > 1,
       },
@@ -219,7 +229,7 @@ export async function getStorefrontProduct(
       ? await tx.select().from(productOptionValues).where(inArray(productOptionValues.optionId, options.map((o) => o.id))).orderBy(asc(productOptionValues.position))
       : [];
     const priceCtx: PriceContext = { storeId: ctx.storeId, currency: ctx.currency, channelId: ctx.channelId, customerGroupIds: ctx.customerGroupIds ?? [] };
-    const prices = await resolvePrices(tx, priceCtx, variants.map((v) => ({ variantId: v.id })));
+    const prices = await resolveDisplayPrices(tx, priceCtx, variants.map((v) => ({ variantId: v.id })));
     const stock = await getStockForVariants(tx, ctx, variants.map((v) => v.id));
     const valueLabel = new Map(values.map((v) => [v.id, pick(v.value, ctx.locale, ctx.defaultLocale)]));
 
@@ -251,7 +261,7 @@ export async function getStorefrontProduct(
             sku: v.sku,
             title: ordered.join(" / ") || card.title,
             optionValueIds: v.optionValueIds,
-            price: price ? { amount: price.amount.toString(), compareAtAmount: price.compareAtAmount?.toString() ?? null, currency: ctx.currency } : null,
+            price: price ? { amount: price.amount.toString(), compareAtAmount: price.previousAmount?.toString() ?? null, currency: ctx.currency } : null,
             available: unlimited || (s?.available ?? 0) > 0,
             lowStockQuantity: !unlimited && s && s.available > 0 && s.available <= 5 ? s.available : null,
             requiresShipping: v.requiresShipping,
@@ -295,8 +305,10 @@ export interface ListingQuery {
 
 /**
  * Storefront listing used by collection pages, search and product-grid sections. Sorting
- * and filtering happen in SQL against the base price list of the requested currency;
- * displayed prices are then resolved per customer context.
+ * and price filtering happen in SQL against the base price list of the requested currency;
+ * displayed prices are then resolved per customer context. The on-sale filter matches the
+ * cards: a product qualifies when a variant shows a history-derived previous price in the
+ * visitor's context.
  */
 export async function listStorefrontProducts(
   db: Parameters<typeof withTenantTx>[0],
@@ -320,8 +332,9 @@ export async function listStorefrontProducts(
     if (q.priceMin !== undefined) conds.push(sql`${basePrice} >= ${q.priceMin}`);
     if (q.priceMax !== undefined) conds.push(sql`${basePrice} <= ${q.priceMax}`);
     if (q.onSaleOnly) {
-      conds.push(sql`exists (select 1 from product_variants pv join money_amounts ma on ma.variant_id = pv.id
-        where pv.product_id = ${products.id} and ma.compare_at_amount > ma.amount)`);
+      const priceCtx: PriceContext = { storeId: ctx.storeId, currency: ctx.currency, channelId: ctx.channelId, customerGroupIds: ctx.customerGroupIds ?? [] };
+      const discounted = await discountedVariantSql(tx, priceCtx, sql`pv.id`);
+      conds.push(sql`exists (select 1 from product_variants pv where pv.product_id = ${products.id} and pv.archived_at is null and ${discounted})`);
     }
     if (q.optionValueLabels?.length) {
       conds.push(sql`exists (select 1 from product_options po join product_option_values pov on pov.option_id = po.id
@@ -411,15 +424,16 @@ export async function getStorefrontCollectionsByIds(db: Parameters<typeof withTe
 }
 
 /** Handles of every visible product and published collection for sitemaps. */
+/** Published product and collection URLs, one row per translation; id groups the languages of one resource (hreflang). */
 export async function listSitemapEntries(db: Parameters<typeof withTenantTx>[0], ctx: StorefrontQueryContext) {
   return withTenantTx(db, ctx, async (tx) => {
     const prods = await tx
-      .select({ handle: productTranslations.handle, locale: productTranslations.locale, updatedAt: products.updatedAt })
+      .select({ id: products.id, handle: productTranslations.handle, locale: productTranslations.locale, updatedAt: products.updatedAt })
       .from(products)
       .innerJoin(productTranslations, eq(productTranslations.productId, products.id))
       .where(and(eq(products.storeId, ctx.storeId), visibleSql(ctx.channelId)));
     const cols = await tx
-      .select({ handle: collectionTranslations.handle, locale: collectionTranslations.locale, updatedAt: collections.updatedAt })
+      .select({ id: collections.id, handle: collectionTranslations.handle, locale: collectionTranslations.locale, updatedAt: collections.updatedAt })
       .from(collections)
       .innerJoin(collectionTranslations, eq(collectionTranslations.collectionId, collections.id))
       .where(and(eq(collections.storeId, ctx.storeId), eq(collections.isPublished, true)));

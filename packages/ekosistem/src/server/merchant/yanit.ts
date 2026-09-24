@@ -200,7 +200,19 @@ export async function listYanitCitations(deps: EkosistemServerDeps, ctx: StoreCo
 // ---------------------------------------------------------------------------
 
 const MAX_PARAGRAPHS = 30;
-const FAQ_HEADING: Record<(typeof LOCALES)[number], string> = { tr: "Sıkça sorulan sorular", en: "Frequently asked questions" };
+const FAQ_HEADING: Record<(typeof LOCALES)[number], string> = {
+  tr: "Sıkça sorulan sorular",
+  en: "Frequently asked questions",
+  de: "Häufig gestellte Fragen",
+  ar: "الأسئلة الشائعة",
+  ru: "Часто задаваемые вопросы",
+  fr: "Questions fréquentes",
+  fa: "پرسش‌های متداول",
+  az: "Tez-tez verilən suallar",
+  nl: "Veelgestelde vragen",
+  uk: "Поширені запитання",
+  ka: "ხშირად დასმული კითხვები",
+};
 
 const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 

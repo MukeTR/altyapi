@@ -21,8 +21,22 @@ export function domainEventHandlers(deps: WorkerDeps): EventHandler[] {
     {
       // Content changes bump stores.content_version; the edge cache key includes it. KV writes are
       // coalesced per store (flushed by the scheduler) to respect KV per-key write limits.
+      // storefront.publication_switched covers every live pointer move, including rollbacks.
       name: "edge-content-version",
-      events: ["theme.published", "page.published", "product.created", "product.updated", "product.published", "product.deleted", "campaign.activated", "tracking.updated"],
+      events: [
+        "storefront.publication_switched",
+        "theme.published",
+        "page.published",
+        "redirect.changed",
+        "product.created",
+        "product.updated",
+        "product.published",
+        "product.deleted",
+        "collection.changed",
+        "store.settings_updated",
+        "campaign.activated",
+        "tracking.updated",
+      ],
       async handle(event) {
         if (!deps.domains.cloudflare || !event.storeId) return;
         await deps.redis.sadd("edge:content-pending", event.storeId);

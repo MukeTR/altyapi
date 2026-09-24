@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AppError, conflict, invalid, isValidSlug, newId, notFound, slugify } from "@altyapi/commerce-core";
+import { AppError, assertStoreLocales, conflict, invalid, isValidSlug, newId, notFound, slugify } from "@altyapi/commerce-core";
 import {
   and,
   asc,
@@ -23,6 +23,7 @@ import {
   withPlatformTx,
   withTenantTx,
   type Database,
+  type LocalizedText,
   type NavigationItem,
   type PageContent,
   type SeoFields,
@@ -36,9 +37,10 @@ import { assertCan, type StoreContext } from "@altyapi/tenancy";
 import { defaultGlobalSections, defaultNavigations, defaultPages } from "./defaults";
 import type { PageTypeName } from "./sections/definitions";
 import { themeSettingsSchema } from "./theme-settings";
-import { collectAssetIds, pageContentInputSchema, validatePageContent } from "./validation";
+import { collectAssetIds, localizedTextMaps, pageContentInputSchema, validatePageContent } from "./validation";
 import { LOCALES } from "./sections/primitives";
 import { ensureBaseline, navigationSnapshot, nextRevisionNumber, pageSnapshot, recordRevision, themeSnapshot, type RevisionMeta } from "./history";
+import { assertHandleFree, assertLiveHandlesFree, isRoutablePageType } from "./handles";
 
 type Scope = { organizationId: string; storeId: string };
 const scopeOf = (ctx: StoreContext): Scope => ({ organizationId: ctx.organizationId, storeId: ctx.storeId });
@@ -175,12 +177,10 @@ async function publishCore(tx: Transaction, scope: Scope, opts: PublishOptions):
   if (opts.pageIds !== "all" && candidates.length !== opts.pageIds.length) throw notFound("page");
 
   const publishedPages: { pageId: string; pageVersionId: string }[] = [];
+  const publishedHandles = new Map<string, string>();
   for (const page of candidates) {
     const needsVersion = !pageMap[page.id] || page.draftRevision !== page.publishedRevision;
     if (!needsVersion) continue;
-    const previous = pageMap[page.id]
-      ? await tx.query.pageVersions.findFirst({ where: eq(pageVersions.id, pageMap[page.id]!) })
-      : undefined;
     const last = await tx.query.pageVersions.findFirst({ where: eq(pageVersions.pageId, page.id), orderBy: desc(pageVersions.version) });
     const versionId = newId();
     await tx.insert(pageVersions).values({
@@ -203,30 +203,32 @@ async function publishCore(tx: Transaction, scope: Scope, opts: PublishOptions):
       .where(eq(pages.id, page.id));
     pageMap[page.id] = versionId;
     publishedPages.push({ pageId: page.id, pageVersionId: versionId });
-
-    // Handle changed on a routable page: keep the old URL working with a 301.
-    const oldPath = previous ? pagePath(previous.type, previous.handle) : null;
-    const newPath = pagePath(page.type, page.handle);
-    if (oldPath && newPath && oldPath !== newPath) {
-      await upsertRedirect(tx, scope, oldPath, newPath, 301, "slug_change");
-      await tx
-        .insert(slugHistory)
-        .values({
-          id: newId(),
-          organizationId: scope.organizationId,
-          storeId: scope.storeId,
-          resourceType: "page",
-          resourceId: page.id,
-          locale: "*",
-          slug: previous!.handle,
-        })
-        .onConflictDoNothing();
-    }
+    if (isRoutablePageType(page.type)) publishedHandles.set(page.id, page.handle);
   }
 
   for (const pageId of opts.removePageIds ?? []) {
     delete pageMap[pageId];
     await tx.update(pages).set({ status: "unpublished", publishedRevision: null }).where(eq(pages.id, pageId));
+  }
+
+  // Storefront URLs resolve by published handle: a handle still served by another live page
+  // (renamed only in its draft) cannot go live twice.
+  const otherLiveIds = Object.entries(pageMap)
+    .filter(([pageId]) => !publishedHandles.has(pageId))
+    .map(([, versionId]) => versionId);
+  if (publishedHandles.size && otherLiveIds.length) {
+    const [clash] = await tx
+      .select({ handle: pageVersions.handle })
+      .from(pageVersions)
+      .where(
+        and(
+          inArray(pageVersions.id, otherLiveIds),
+          inArray(pageVersions.type, ["page", "landing"]),
+          inArray(pageVersions.handle, [...publishedHandles.values()]),
+        ),
+      )
+      .limit(1);
+    if (clash) throw conflict("errors.page.handle_taken", { handle: clash.handle });
   }
 
   const [{ next }] = (await tx
@@ -250,7 +252,7 @@ async function publishCore(tx: Transaction, scope: Scope, opts: PublishOptions):
     })
     .returning();
 
-  await switchPointer(tx, scope, publication!.id);
+  await switchPointer(tx, scope, publication!, current);
 
   if (themePublished) {
     await appendEvent(tx, {
@@ -289,16 +291,76 @@ async function publishCore(tx: Transaction, scope: Scope, opts: PublishOptions):
   return publication!;
 }
 
-/** Atomic live switch: pointer update and content cache version bump in one transaction. */
-async function switchPointer(tx: Transaction, scope: Scope, publicationId: string): Promise<void> {
+/**
+ * Atomic live switch shared by publish, unpublish, scheduled publishing and rollback: pointer
+ * update, 301s for pages whose live URL moved, content cache version bump and the
+ * storefront.publication_switched event (edge cache invalidation) in the caller's transaction.
+ */
+async function switchPointer(tx: Transaction, scope: Scope, publication: PublicationRow, previous: PublicationRow | undefined): Promise<void> {
   await tx
     .update(storefrontState)
-    .set({ activePublicationId: publicationId, updatedAt: new Date() })
+    .set({ activePublicationId: publication.id, updatedAt: new Date() })
     .where(eq(storefrontState.storeId, scope.storeId));
-  await tx
+  if (previous) await redirectMovedPages(tx, scope, previous.pageVersions, publication.pageVersions);
+  const contentVersion = await bumpContentVersion(tx, scope.storeId);
+  await appendEvent(tx, {
+    type: "storefront.publication_switched",
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+    aggregateType: "publication",
+    aggregateId: publication.id,
+    payload: {
+      publicationId: publication.id,
+      previousPublicationId: previous?.id ?? null,
+      number: publication.number,
+      reason: publication.reason,
+      contentVersion,
+    },
+  });
+}
+
+/**
+ * Keeps old URLs working: every routable page whose live handle differs between two
+ * publications (a published rename, or a rollback across one) gets a 301 to its new path.
+ */
+async function redirectMovedPages(tx: Transaction, scope: Scope, before: Record<string, string>, after: Record<string, string>): Promise<void> {
+  const moved = Object.entries(after).filter(([pageId, versionId]) => before[pageId] && before[pageId] !== versionId);
+  if (!moved.length) return;
+  const rows = await tx
+    .select({ id: pageVersions.id, type: pageVersions.type, handle: pageVersions.handle })
+    .from(pageVersions)
+    .where(inArray(pageVersions.id, moved.flatMap(([pageId, versionId]) => [before[pageId]!, versionId])));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const [pageId, versionId] of moved) {
+    const previous = byId.get(before[pageId]!);
+    const next = byId.get(versionId);
+    const oldPath = previous ? pagePath(previous.type, previous.handle) : null;
+    const newPath = next ? pagePath(next.type, next.handle) : null;
+    if (!oldPath || !newPath || oldPath === newPath) continue;
+    await upsertRedirect(tx, scope, oldPath, newPath, 301, "slug_change");
+    await tx
+      .insert(slugHistory)
+      .values({
+        id: newId(),
+        organizationId: scope.organizationId,
+        storeId: scope.storeId,
+        resourceType: "page",
+        resourceId: pageId,
+        locale: "*",
+        slug: previous!.handle,
+      })
+      .onConflictDoNothing();
+  }
+}
+
+/** Bumps the store's content version (part of every storefront and edge cache key); returns the new value. */
+async function bumpContentVersion(tx: Transaction, storeId: string): Promise<number> {
+  const [row] = await tx
     .update(stores)
     .set({ contentVersion: sql`${stores.contentVersion} + 1` })
-    .where(eq(stores.id, scope.storeId));
+    .where(eq(stores.id, storeId))
+    .returning({ contentVersion: stores.contentVersion });
+  return row!.contentVersion;
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +402,7 @@ export async function updateThemeDraft(db: Database, ctx: StoreContext, input: z
     if (theme.draftRevision !== input.expectedRevision) {
       throw conflict("errors.content.revision_conflict", { currentRevision: theme.draftRevision });
     }
+    if (globalSections) assertContentLocales(ctx, globalSections, theme.draftGlobalSections);
     await ensureBaseline(tx, scopeOf(ctx), "theme", theme.id, theme.draftRevision, themeSnapshot(theme));
     const revision = await nextRevisionNumber(tx, "theme", theme.id, theme.draftRevision);
     const [updated] = await tx
@@ -406,6 +469,50 @@ export const schedulePageSchema = z
   .object({ publishAt: z.coerce.date().nullable(), unpublishAt: z.coerce.date().nullable() })
   .refine((v) => !v.publishAt || !v.unpublishAt || v.publishAt < v.unpublishAt, "errors.page.invalid_schedule");
 
+type LocalizedInput = Record<string, unknown> | undefined;
+type PageTextInput = { title?: LocalizedInput; seo?: { title?: LocalizedInput; description?: LocalizedInput } };
+
+/**
+ * New or edited page title and SEO text may only be in languages the store publishes in
+ * (commerce-core locale registry). Text already stored is compared against, so a page whose
+ * existing translations include a language the store has since disabled (or the bilingual
+ * defaults of a single-language store) can still be saved unchanged.
+ */
+function assertPageLocales(ctx: StoreContext, input: PageTextInput, current?: { title: LocalizedInput; seo: PageTextInput["seo"] }) {
+  const edited = (next: LocalizedInput, stored: LocalizedInput) => Object.fromEntries(Object.entries(next ?? {}).filter(([l, text]) => text !== stored?.[l]));
+  const supported = ctx.store.supportedLocales;
+  assertStoreLocales(edited(input.title, current?.title), supported, "title");
+  assertStoreLocales(edited(input.seo?.title, current?.seo?.title), supported, "seo.title");
+  assertStoreLocales(edited(input.seo?.description, current?.seo?.description), supported, "seo.description");
+}
+
+const textPair = (locale: string, text: unknown) => `${locale}\u0000${String(text)}`;
+
+/** Every (language, text) pair of the given localized maps. */
+function textPairs(maps: Iterable<Record<string, unknown>>): Set<string> {
+  const out = new Set<string>();
+  for (const map of maps) for (const [locale, text] of Object.entries(map)) out.add(textPair(locale, text));
+  return out;
+}
+
+/**
+ * The same rule for localized text in section and block props (every section, including
+ * global ones) and menu labels: new or edited text only in the store's languages. What is
+ * already stored counts by language and value wherever it sits, so reordering sections, items
+ * or blocks never turns existing text (bilingual defaults, a since-disabled language) into an
+ * edit.
+ */
+function assertLocalizedMaps(ctx: StoreContext, maps: { path: string; map: Record<string, unknown> }[], stored: Set<string>) {
+  for (const { path, map } of maps) {
+    const edited = Object.fromEntries(Object.entries(map).filter(([locale, text]) => !stored.has(textPair(locale, text))));
+    assertStoreLocales(edited, ctx.store.supportedLocales, path);
+  }
+}
+
+function assertContentLocales(ctx: StoreContext, next: PageContent, stored?: PageContent) {
+  assertLocalizedMaps(ctx, localizedTextMaps(next), textPairs(stored ? localizedTextMaps(stored).map((m) => m.map) : []));
+}
+
 function permissionForPageType(type: string, action: "write" | "publish") {
   return (type === "page" || type === "landing" ? `content:${action}` : `storefront:${action}`) as
     | "content:write"
@@ -434,12 +541,31 @@ export async function getPage(db: Database, ctx: StoreContext, pageId: string): 
   return page;
 }
 
-async function assertHandleFree(tx: Transaction, storeId: string, handle: string, exceptId?: string) {
-  if (!isValidSlug(handle)) throw invalid("errors.page.invalid_handle", { handle });
-  const clash = await tx.query.pages.findFirst({
-    where: and(eq(pages.storeId, storeId), inArray(pages.type, ["page", "landing"]), eq(pages.handle, handle)),
+/**
+ * Live URL path of each given page that is in the active publication. The storefront serves
+ * a page under its published handle, so a rename that is only in the draft does not move it.
+ */
+export async function livePagePaths(db: Database, ctx: StoreContext, pageIds: string[]): Promise<Map<string, string>> {
+  assertCan(ctx, "storefront:read");
+  if (!pageIds.length) return new Map();
+  return withTenantTx(db, scopeOf(ctx), async (tx) => {
+    const state = await tx.query.storefrontState.findFirst({ where: eq(storefrontState.storeId, ctx.storeId) });
+    const live = state?.activePublicationId
+      ? await tx.query.publications.findFirst({ where: eq(publications.id, state.activePublicationId) })
+      : undefined;
+    const versionIds = pageIds.flatMap((id) => (live?.pageVersions[id] ? [live.pageVersions[id]] : []));
+    if (!versionIds.length) return new Map();
+    const rows = await tx
+      .select({ pageId: pageVersions.pageId, type: pageVersions.type, handle: pageVersions.handle })
+      .from(pageVersions)
+      .where(inArray(pageVersions.id, versionIds));
+    return new Map(
+      rows.flatMap((r) => {
+        const path = pagePath(r.type, r.handle);
+        return path ? [[r.pageId, path] as const] : [];
+      }),
+    );
   });
-  if (clash && clash.id !== exceptId) throw conflict("errors.page.handle_taken", { handle });
 }
 
 export async function createPage(
@@ -449,12 +575,14 @@ export async function createPage(
   opts: { revision?: RevisionMeta } = {},
 ): Promise<PageRow> {
   assertCan(ctx, "content:write");
+  assertPageLocales(ctx, input);
   const handle = input.handle ?? slugify(Object.values(input.title).find(Boolean) ?? "sayfa");
   let content: PageContent = { sections: [] };
   if (input.content) {
     const v = validatePageContent(input.content, input.type);
     if (!v.ok) contentIssues(v.issues);
     content = v.content;
+    assertContentLocales(ctx, content);
   }
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
     await assertHandleFree(tx, ctx.storeId, handle);
@@ -499,6 +627,7 @@ export async function createPage(
 export async function updatePageDraft(db: Database, ctx: StoreContext, pageId: string, input: z.infer<typeof updatePageSchema>): Promise<PageRow> {
   const page = await getPage(db, ctx, pageId);
   assertCan(ctx, permissionForPageType(page.type, "write"));
+  assertPageLocales(ctx, input, { title: page.title, seo: page.draftSeo });
   if (input.handle !== undefined && page.type !== "page" && page.type !== "landing") {
     throw invalid("errors.page.handle_not_editable");
   }
@@ -507,6 +636,7 @@ export async function updatePageDraft(db: Database, ctx: StoreContext, pageId: s
     const v = validatePageContent(input.content, page.type);
     if (!v.ok) contentIssues(v.issues);
     content = v.content;
+    assertContentLocales(ctx, content, page.draftContent);
   }
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
     if (input.handle && input.handle !== page.handle) await assertHandleFree(tx, ctx.storeId, input.handle, page.id);
@@ -560,18 +690,21 @@ export async function deletePage(db: Database, ctx: StoreContext, pageId: string
 export async function schedulePage(db: Database, ctx: StoreContext, pageId: string, input: z.infer<typeof schedulePageSchema>): Promise<PageRow> {
   const page = await getPage(db, ctx, pageId);
   assertCan(ctx, permissionForPageType(page.type, "publish"));
-  if (page.type !== "page" && page.type !== "landing") throw invalid("errors.page.schedule_not_supported");
-  const [row] = await withTenantTx(db, scopeOf(ctx), (tx) =>
-    tx
+  if (!isRoutablePageType(page.type)) throw invalid("errors.page.schedule_not_supported");
+  const scheduled = Boolean(input.publishAt) && page.status !== "published";
+  const [row] = await withTenantTx(db, scopeOf(ctx), async (tx) => {
+    // Refused now rather than at publish time, when nobody is there to fix it.
+    if (scheduled) await assertHandleFree(tx, ctx.storeId, page.handle, page.id);
+    return tx
       .update(pages)
       .set({
         publishAt: input.publishAt,
         unpublishAt: input.unpublishAt,
-        status: input.publishAt && page.status !== "published" ? "scheduled" : page.status === "scheduled" ? "draft" : page.status,
+        status: scheduled ? "scheduled" : page.status === "scheduled" ? "draft" : page.status,
       })
       .where(eq(pages.id, pageId))
-      .returning(),
-  );
+      .returning();
+  });
   return row!;
 }
 
@@ -625,12 +758,20 @@ export async function rollbackTo(db: Database, ctx: StoreContext, publicationId:
       where: and(eq(publications.id, publicationId), eq(publications.storeId, ctx.storeId)),
     });
     if (!target || !state) throw notFound("publication", publicationId);
+    const current = state.activePublicationId
+      ? await tx.query.publications.findFirst({ where: eq(publications.id, state.activePublicationId) })
+      : undefined;
     // Pages deleted since then cannot be restored; keep only versions that still exist.
     const ids = Object.values(target.pageVersions);
     const existing = ids.length
-      ? await tx.select({ id: pageVersions.id, pageId: pageVersions.pageId }).from(pageVersions).where(inArray(pageVersions.id, ids))
+      ? await tx
+          .select({ id: pageVersions.id, pageId: pageVersions.pageId, type: pageVersions.type, handle: pageVersions.handle, sourceRevision: pageVersions.sourceRevision })
+          .from(pageVersions)
+          .where(inArray(pageVersions.id, ids))
       : [];
     const pageMap = Object.fromEntries(existing.map((e) => [e.pageId, e.id]));
+    // A handle that goes live again must not be what another page is drafted or scheduled under.
+    await assertLiveHandlesFree(tx, ctx.storeId, new Map(existing.filter((e) => isRoutablePageType(e.type)).map((e) => [e.pageId, e.handle])));
     const [{ next }] = (await tx
       .select({ next: sql<number>`coalesce(max(${publications.number}), 0) + 1` })
       .from(publications)
@@ -657,10 +798,9 @@ export async function rollbackTo(db: Database, ctx: StoreContext, publicationId:
       .set({ status: "unpublished", publishedRevision: null })
       .where(and(eq(pages.storeId, ctx.storeId), eq(pages.status, "published"), livePageIds.length ? notInArray(pages.id, livePageIds) : undefined));
     for (const e of existing) {
-      const v = await tx.query.pageVersions.findFirst({ where: eq(pageVersions.id, e.id) });
-      await tx.update(pages).set({ status: "published", publishedRevision: v!.sourceRevision }).where(eq(pages.id, e.pageId));
+      await tx.update(pages).set({ status: "published", publishedRevision: e.sourceRevision }).where(eq(pages.id, e.pageId));
     }
-    await switchPointer(tx, scopeOf(ctx), publication!.id);
+    await switchPointer(tx, scopeOf(ctx), publication!, current);
     await recordAudit(tx, {
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
@@ -700,12 +840,12 @@ const navLinkSchema = z.discriminatedUnion("type", [
   z.object({ type: z.enum(["home", "search", "cart"]) }),
 ]);
 
-type NavInput = { id?: string; label: Record<string, string>; link: z.infer<typeof navLinkSchema>; children?: NavInput[] };
+type NavInput = { id?: string; label: Partial<Record<(typeof LOCALES)[number], string>>; link: z.infer<typeof navLinkSchema>; children?: NavInput[] };
 
 const navItemSchema: z.ZodType<NavInput> = z.lazy(() =>
   z.object({
     id: z.string().max(64).optional(),
-    label: z.record(z.string(), z.string().max(80)),
+    label: z.partialRecord(z.enum(LOCALES), z.string().max(80)),
     link: navLinkSchema,
     children: z.array(navItemSchema).max(30).optional(),
   }),
@@ -716,11 +856,19 @@ export const upsertNavigationSchema = z.object({
   items: z.array(navItemSchema).max(50),
 });
 
+/** Menu labels of a tree with their paths (`items.0.children.1.label`). */
+function navLabels(items: { label: Record<string, unknown>; children?: unknown[] }[], path = "items"): { path: string; map: Record<string, unknown> }[] {
+  return items.flatMap((item, i) => [
+    { path: `${path}.${i}.label`, map: item.label },
+    ...navLabels((item.children ?? []) as typeof items, `${path}.${i}.children`),
+  ]);
+}
+
 function normalizeNav(items: NavInput[], depth = 1): NavigationItem[] {
   if (depth > 3) throw invalid("errors.navigation.too_deep");
   return items.map((i) => ({
     id: i.id ?? newId(),
-    label: i.label,
+    label: i.label as LocalizedText,
     link: i.link as NavigationItem["link"],
     ...(i.children?.length ? { children: normalizeNav(i.children, depth + 1) } : {}),
   }));
@@ -738,6 +886,7 @@ export async function upsertNavigation(db: Database, ctx: StoreContext, handle: 
   const items = normalizeNav(input.items);
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
     const existing = await tx.query.navigations.findFirst({ where: and(eq(navigations.storeId, ctx.storeId), eq(navigations.handle, handle)) });
+    assertLocalizedMaps(ctx, navLabels(items), textPairs(navLabels(existing?.items ?? []).map((l) => l.map)));
     let row: typeof navigations.$inferSelect;
     if (existing) {
       await ensureBaseline(tx, scopeOf(ctx), "navigation", existing.id, existing.revision, navigationSnapshot(existing));
@@ -792,30 +941,60 @@ export async function listRedirects(db: Database, ctx: StoreContext) {
   return withTenantTx(db, scopeOf(ctx), (tx) => tx.select().from(redirects).where(eq(redirects.storeId, ctx.storeId)).orderBy(asc(redirects.fromPath)));
 }
 
+/** Creates a redirect, or updates the one that already starts at fromPath. */
 export async function createRedirect(db: Database, ctx: StoreContext, input: z.infer<typeof createRedirectSchema>) {
   assertCan(ctx, "storefront:write");
   if (input.fromPath === input.toPath) throw invalid("errors.redirect.loop");
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
+    const byFromPath = and(eq(redirects.storeId, ctx.storeId), eq(redirects.fromPath, input.fromPath));
+    const before = await tx.query.redirects.findFirst({ where: byFromPath });
     await upsertRedirect(tx, scopeOf(ctx), input.fromPath, input.toPath, input.statusCode, "manual");
-    await tx.update(stores).set({ contentVersion: sql`${stores.contentVersion} + 1` }).where(eq(stores.id, ctx.storeId));
+    const saved = await tx.query.redirects.findFirst({ where: byFromPath });
+    if (!saved) throw notFound("redirect", input.fromPath);
+    const contentVersion = await bumpContentVersion(tx, ctx.storeId);
+    await appendEvent(tx, {
+      type: "redirect.changed",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      aggregateType: "redirect",
+      aggregateId: saved.id,
+      payload: { redirectId: saved.id, fromPath: saved.fromPath, toPath: saved.toPath, change: before ? "updated" : "created", contentVersion },
+    });
     await recordAudit(tx, {
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       action: "redirect.saved",
       resourceType: "redirect",
-      resourceId: input.fromPath,
+      resourceId: saved.id,
+      ...(before ? { before: { fromPath: before.fromPath, toPath: before.toPath, statusCode: before.statusCode } } : {}),
       after: input,
     });
-    return tx.query.redirects.findFirst({ where: and(eq(redirects.storeId, ctx.storeId), eq(redirects.fromPath, input.fromPath)) });
+    return saved;
   });
 }
 
 export async function deleteRedirect(db: Database, ctx: StoreContext, redirectId: string) {
   assertCan(ctx, "storefront:write");
   await withTenantTx(db, scopeOf(ctx), async (tx) => {
-    const deleted = await tx.delete(redirects).where(and(eq(redirects.id, redirectId), eq(redirects.storeId, ctx.storeId))).returning();
-    if (!deleted.length) throw notFound("redirect", redirectId);
-    await tx.update(stores).set({ contentVersion: sql`${stores.contentVersion} + 1` }).where(eq(stores.id, ctx.storeId));
+    const [deleted] = await tx.delete(redirects).where(and(eq(redirects.id, redirectId), eq(redirects.storeId, ctx.storeId))).returning();
+    if (!deleted) throw notFound("redirect", redirectId);
+    const contentVersion = await bumpContentVersion(tx, ctx.storeId);
+    await appendEvent(tx, {
+      type: "redirect.changed",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      aggregateType: "redirect",
+      aggregateId: deleted.id,
+      payload: { redirectId: deleted.id, fromPath: deleted.fromPath, toPath: null, change: "deleted", contentVersion },
+    });
+    await recordAudit(tx, {
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      action: "redirect.deleted",
+      resourceType: "redirect",
+      resourceId: deleted.id,
+      before: { fromPath: deleted.fromPath, toPath: deleted.toPath, statusCode: deleted.statusCode },
+    });
   });
 }
 
@@ -823,10 +1002,26 @@ export async function deleteRedirect(db: Database, ctx: StoreContext, redirectId
 // Scheduled publishing (worker)
 // ---------------------------------------------------------------------------
 
-/** Publishes scheduled pages whose time has come and unpublishes expired landing pages. */
-export async function runScheduledPublishing(db: Database): Promise<number> {
+/** Where the scheduled publishing run reports pages it could not handle (the worker logger). */
+export interface ScheduleLogger {
+  warn(obj: Record<string, unknown>, msg: string): void;
+  error(obj: Record<string, unknown>, msg: string): void;
+}
+
+type DuePage = { id: string; organizationId: string; storeId: string; status: PageRow["status"]; publishAt: Date | null; unpublishAt: Date | null };
+
+/**
+ * Publishes scheduled pages whose time has come and unpublishes expired landing pages, the
+ * longest overdue first. Every page runs in its own transaction and never holds up the rest
+ * of the batch (other pages, other stores). A page the platform refuses (a domain error, such
+ * as a handle another page is served under) leaves the schedule with an audit entry and a
+ * page.schedule_failed event instead of failing again on every run; an unexpected error keeps
+ * it scheduled for the next run. Returns the number of pages handled.
+ */
+export async function runScheduledPublishing(db: Database, logger?: ScheduleLogger): Promise<number> {
   const now = new Date();
-  const due = await withPlatformTx(db, (tx) =>
+  const dueAt = sql`case when ${pages.status} = 'scheduled' then ${pages.publishAt} else ${pages.unpublishAt} end`;
+  const due: DuePage[] = await withPlatformTx(db, (tx) =>
     tx
       .select({ id: pages.id, organizationId: pages.organizationId, storeId: pages.storeId, status: pages.status, publishAt: pages.publishAt, unpublishAt: pages.unpublishAt })
       .from(pages)
@@ -834,22 +1029,83 @@ export async function runScheduledPublishing(db: Database): Promise<number> {
         sql`(${pages.status} = 'scheduled' and ${pages.publishAt} <= ${pgTimestamp(now)})
           or (${pages.status} = 'published' and ${pages.unpublishAt} <= ${pgTimestamp(now)})`,
       )
+      .orderBy(asc(dueAt), asc(pages.id))
       .limit(100),
   );
+  let handled = 0;
   for (const p of due) {
     const scope = { organizationId: p.organizationId, storeId: p.storeId };
-    await withTenantTx(db, scope, async (tx) => {
-      const expired = p.unpublishAt !== null && p.unpublishAt <= now;
-      await publishCore(tx, scope, {
-        includeTheme: false,
-        pageIds: expired ? [] : [p.id],
-        removePageIds: expired ? [p.id] : [],
-        reason: expired ? "scheduled_unpublish" : "scheduled_publish",
-        principalId: null,
+    const expired = p.unpublishAt !== null && p.unpublishAt <= now;
+    const operation = expired ? "unpublish" : "publish";
+    try {
+      await withTenantTx(db, scope, async (tx) => {
+        // The merchant may have published, unpublished or rescheduled it since the batch was read.
+        const [current] = await tx.select({ status: pages.status, publishAt: pages.publishAt, unpublishAt: pages.unpublishAt }).from(pages).where(eq(pages.id, p.id));
+        const stillDue = expired
+          ? current?.status === "published" && current.unpublishAt !== null && current.unpublishAt <= now
+          : current?.status === "scheduled" && current.publishAt !== null && current.publishAt <= now;
+        if (!stillDue) return;
+        await publishCore(tx, scope, {
+          includeTheme: false,
+          pageIds: expired ? [] : [p.id],
+          removePageIds: expired ? [p.id] : [],
+          reason: expired ? "scheduled_unpublish" : "scheduled_publish",
+          principalId: null,
+        });
+        if (expired) await tx.update(pages).set({ unpublishAt: null }).where(eq(pages.id, p.id));
       });
-      if (expired) await tx.update(pages).set({ unpublishAt: null }).where(eq(pages.id, p.id));
-    });
+      handled++;
+    } catch (err) {
+      if (!(err instanceof AppError)) {
+        logger?.error({ err, pageId: p.id, storeId: p.storeId, operation }, "scheduled page publishing failed; retrying on the next run");
+        continue;
+      }
+      try {
+        await withTenantTx(db, scope, (tx) => abandonSchedule(tx, scope, p.id, operation, err));
+        logger?.warn({ pageId: p.id, storeId: p.storeId, operation, error: err.messageKey, details: err.details }, "scheduled page publishing refused; page left the schedule");
+        handled++;
+      } catch (abandonErr) {
+        logger?.error({ err: abandonErr, pageId: p.id, storeId: p.storeId, operation }, "scheduled page could not leave the schedule; retrying on the next run");
+      }
+    }
   }
-  return due.length;
+  return handled;
 }
 
+/**
+ * Takes a page the platform refused to publish (or unpublish) on schedule off the schedule:
+ * a refused publish goes back to draft, a refused unpublish keeps the page live without an
+ * end date. The refusal is audited and announced (page.schedule_failed) for the merchant.
+ */
+async function abandonSchedule(tx: Transaction, scope: Scope, pageId: string, operation: "publish" | "unpublish", err: AppError): Promise<void> {
+  const [row] =
+    operation === "publish"
+      ? await tx
+          .update(pages)
+          .set({ status: "draft", publishAt: null })
+          .where(and(eq(pages.id, pageId), eq(pages.status, "scheduled")))
+          .returning({ id: pages.id })
+      : await tx
+          .update(pages)
+          .set({ unpublishAt: null })
+          .where(and(eq(pages.id, pageId), eq(pages.status, "published")))
+          .returning({ id: pages.id });
+  if (!row) return;
+  const details = err.details ?? {};
+  await appendEvent(tx, {
+    type: "page.schedule_failed",
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+    aggregateType: "page",
+    aggregateId: pageId,
+    payload: { pageId, operation, errorKey: err.messageKey, details },
+  });
+  await recordAudit(tx, {
+    organizationId: scope.organizationId,
+    storeId: scope.storeId,
+    action: "page.schedule_failed",
+    resourceType: "page",
+    resourceId: pageId,
+    after: { operation, error: err.messageKey, details },
+  });
+}

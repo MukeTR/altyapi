@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { conflict, currencySchema, invalid, isValidSlug, newId, notFound, slugify } from "@altyapi/commerce-core";
+import { LOCALE_CODES, conflict, currencySchema, invalid, isValidSlug, newId, notFound, slugify } from "@altyapi/commerce-core";
 import { and, channels, eq, inArray, sql, storeDomains, stores, withTenantTx, type Database, type Transaction } from "@altyapi/database";
 import { recordAudit } from "@altyapi/audit";
 import { appendEvent } from "@altyapi/events";
@@ -12,7 +12,8 @@ export const RESERVED_STORE_SLUGS = new Set([
   "karmatik", "yanit", "altyapi", "billing", "checkout", "pay", "payments",
 ]);
 
-export const SUPPORTED_LOCALES = ["tr", "en"] as const;
+/** Languages a store can enable; derived from the platform locale registry. */
+export const SUPPORTED_LOCALES = LOCALE_CODES;
 
 export const createStoreSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -27,7 +28,7 @@ export const createStoreSchema = z.object({
 export const updateStoreSettingsSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   defaultLocale: z.enum(SUPPORTED_LOCALES).optional(),
-  supportedLocales: z.array(z.enum(SUPPORTED_LOCALES)).min(1).optional(),
+  supportedLocales: z.array(z.enum(SUPPORTED_LOCALES)).min(1).transform((l) => [...new Set(l)]).optional(),
   supportedCurrencies: z.array(currencySchema).min(1).optional(),
   timezone: z.string().optional(),
   contactEmail: z.email().nullable().optional(),
@@ -216,6 +217,16 @@ export async function updateStoreSettings(
       })
       .where(eq(stores.id, ctx.storeId))
       .returning();
+    // The edge routing entry carries status, default locale and content version; the worker
+    // republishes it on this event (edge-content-version).
+    await appendEvent(tx, {
+      type: "store.settings_updated",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      aggregateType: "store",
+      aggregateId: ctx.storeId,
+      payload: { fields: Object.keys(input), contentVersion: after!.contentVersion },
+    });
     await recordAudit(tx, {
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,

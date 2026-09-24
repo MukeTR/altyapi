@@ -64,8 +64,13 @@ export interface ResolvedRoute {
   locale: string;
   path: string;
   canonicalPath: string;
-  /** locale → path for hreflang. */
+  /** locale → path for hreflang; only languages that have content of their own for this route. */
   alternates: Record<string, string>;
+  /**
+   * imageObjectKey is the social (Open Graph) image: the page's SEO image for home and content
+   * pages, the first product image or the collection image otherwise. noindex is also set when
+   * the requested language renders the default-language fallback.
+   */
   seo: { title: string; description: string; imageObjectKey: string | null; noindex: boolean };
   sections: RenderSection[];
   product: ProductDetailDto | null;

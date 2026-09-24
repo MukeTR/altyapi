@@ -4,7 +4,6 @@ import {
   desc,
   draftRevisions,
   eq,
-  inArray,
   navigations,
   pages,
   sql,
@@ -15,6 +14,7 @@ import {
 } from "@altyapi/database";
 import { recordAudit } from "@altyapi/audit";
 import { currentContext } from "@altyapi/observability";
+import { assertHandleFree, isRoutablePageType } from "./handles";
 import { assertCan, type StoreContext } from "@altyapi/tenancy";
 
 export type RevisionResource = "theme" | "page" | "navigation";
@@ -109,10 +109,9 @@ async function applySnapshot(tx: Transaction, storeId: string, type: RevisionRes
       .where(eq(themes.id, id));
   } else if (type === "page") {
     const handle = snap.handle as string;
-    const clash = await tx.query.pages.findFirst({
-      where: and(eq(pages.storeId, storeId), inArray(pages.type, ["page", "landing"]), eq(pages.handle, handle)),
-    });
-    if (clash && clash.id !== id) throw conflict("errors.page.handle_taken", { handle });
+    const [page] = await tx.select({ type: pages.type, handle: pages.handle }).from(pages).where(eq(pages.id, id));
+    // Restoring an earlier handle is a rename: the same one-URL-one-page rule as editing it.
+    if (page && isRoutablePageType(page.type) && page.handle !== handle) await assertHandleFree(tx, storeId, handle, id);
     await tx
       .update(pages)
       .set({ title: snap.title as Record<string, string>, handle, draftContent: snap.content as never, draftSeo: snap.seo as never, campaignId: (snap.campaignId as string | null) ?? null, draftRevision: revision })

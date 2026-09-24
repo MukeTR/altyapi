@@ -22,6 +22,7 @@ import {
 import { recordAudit } from "@altyapi/audit";
 import { appendEvent } from "@altyapi/events";
 import { assertCan, type StoreContext } from "@altyapi/tenancy";
+import { closePriceListHistory, priceSourceFromContext, syncPriceHistory } from "./history";
 import { resolvePrices, type PriceContext } from "./resolver";
 
 type Scope = { organizationId: string; storeId: string };
@@ -114,7 +115,10 @@ export const setPricesSchema = z.object({
   replaceVariantTiers: z.boolean().default(false),
 });
 
-/** Upserts prices into a list. Price changes are audited with before/after values. */
+/**
+ * Upserts prices into a list. Price changes are audited with before/after values and
+ * recorded in price_history (the source of the lawful previous price).
+ */
 export async function setPrices(db: Database, ctx: StoreContext, priceListId: string, input: z.infer<typeof setPricesSchema>) {
   assertCan(ctx, "pricing:write");
   return withTenantTx(db, scopeOf(ctx), async (tx) => {
@@ -131,6 +135,8 @@ export async function upsertPriceEntries(
   list: { id: string; currency: string },
   entries: { variantId: string; amount: bigint; compareAtAmount?: bigint | null; minQuantity: number }[],
   replaceVariantTiers = false,
+  /** price_history source; defaults to the principal of the running operation. */
+  source: string = priceSourceFromContext(),
 ): Promise<void> {
   const variantIds = [...new Set(entries.map((e) => e.variantId))];
   const variants = await tx
@@ -165,6 +171,9 @@ export async function upsertPriceEntries(
         set: { amount: e.amount, compareAtAmount: e.compareAtAmount ?? null, updatedAt: new Date() },
       });
   }
+  // Same transaction: a changed (or removed, with replaceVariantTiers) unit price closes its
+  // open period and opens the next one; unchanged amounts add nothing.
+  await syncPriceHistory(tx, scope, list.id, variantIds, source);
   // Price-based collection rules, feeds and Kârmatik consume product.updated.
   for (const productId of new Set(variants.map((v) => v.productId))) {
     await appendEvent(tx, {
@@ -194,6 +203,8 @@ export async function deletePriceList(db: Database, ctx: StoreContext, priceList
     const list = await tx.query.priceLists.findFirst({ where: and(eq(priceLists.id, priceListId), eq(priceLists.storeId, ctx.storeId)) });
     if (!list) throw notFound("price_list", priceListId);
     if (list.kind === "base") throw conflict("errors.pricing.base_list_permanent");
+    // Its prices stop applying now; the closed periods outlive the list in price_history.
+    await closePriceListHistory(tx, priceListId);
     // The served price of every variant in the list falls back to another list. Its prices go
     // with the list (cascade), so the variants' updated_at moves instead: incremental readers
     // (ekosistem catalog export) see the change, and product.updated announces it like any

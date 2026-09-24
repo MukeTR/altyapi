@@ -51,14 +51,20 @@ export function fetchRoute(t: Tenant, site: StorefrontSite, path: string, query:
   return sfFetch<ResolvedRoute>(t, "/storefront/v1/route", params, 60);
 }
 
+/**
+ * Payload of GET /storefront/v1/sitemap. Product and collection rows are one per translation,
+ * grouped by id; pages carry the languages they have content of their own in. Fields marked
+ * optional may be absent while an older API version is still serving during a rollout.
+ */
 export interface SitemapData {
   defaultLocale: string;
   supportedLocales: string[];
-  products: { handle: string; locale: string; updatedAt: string }[];
-  collections: { handle: string; locale: string; updatedAt: string }[];
-  pages: { type: string; handle: string; updatedAt: string }[];
+  products: { id?: string; handle: string; locale: string; updatedAt: string }[];
+  collections: { id?: string; handle: string; locale: string; updatedAt: string }[];
+  pages: { type: string; handle: string; updatedAt: string; locales?: string[] }[];
 }
 
-export function fetchSitemap(t: Tenant): Promise<SitemapData> {
-  return sfFetch<SitemapData>(t, "/storefront/v1/sitemap", new URLSearchParams(), 3600);
+/** Cached per content version, so a publish or catalog change shows up in the sitemap right away. */
+export function fetchSitemap(t: Tenant, contentVersion: number): Promise<SitemapData> {
+  return sfFetch<SitemapData>(t, "/storefront/v1/sitemap", new URLSearchParams({ v: String(contentVersion) }), 3600);
 }

@@ -29,8 +29,9 @@ import {
 import { getSectionDefinition } from "../sections/definitions";
 import { collectAssetIds } from "../validation";
 import { themeCssVariables } from "../theme-settings";
-import { findRedirect, loadLiveSnapshot, loadPreviewSnapshot, resolvePage, type StorefrontSnapshot } from "../live";
+import { findRedirect, loadLiveSnapshot, loadPreviewSnapshot, pageContentLocales, resolvePage, type ResolvedPage, type StorefrontSnapshot } from "../live";
 import type { Breadcrumb, ListingDto, RenderSection, ResolvedLink, ResolvedRoute, SiteDto } from "./types";
+import { routeLabel } from "./labels";
 
 export interface StoreRef {
   organizationId: string;
@@ -47,6 +48,7 @@ export interface SiteRequest {
 
 const DEFAULT_TTL = 300;
 const PAGE_SIZE_MAX = 96;
+
 
 function localizedText(map: unknown, locale: string, fallback: string): string {
   if (!map || typeof map !== "object") return "";
@@ -292,11 +294,26 @@ export async function resolveRoute(db: Database, ref: StoreRef, site: SiteDto, r
   };
   const now = new Date();
   let ttl = DEFAULT_TTL;
-  const alternatesFor = (build: (l: string) => string | null) =>
-    Object.fromEntries(site.supportedLocales.flatMap((l) => {
+  const alternatesFor = (build: (l: string) => string | null, locales: readonly string[] = site.supportedLocales) =>
+    Object.fromEntries(locales.flatMap((l) => {
       const p = build(l);
       return p ? [[l, localizedPath(l, defaultLocale, p)]] : [];
     }));
+  // Page SEO: hreflang only for languages the page is written in; a language that renders the
+  // default-language fallback is not indexed. The OG image is the page's SEO image.
+  const pageSeo = (page: ResolvedPage, route: ResolvedRoute, pageUrlPath: string, fallbackTitle: string) => {
+    const contentLocales = pageContentLocales(page, site.supportedLocales, defaultLocale);
+    const imageId = page.seo.imageAssetId;
+    return {
+      alternates: alternatesFor(() => pageUrlPath, contentLocales),
+      seo: {
+        title: localizedText(page.seo.title, locale, defaultLocale) || fallbackTitle,
+        description: localizedText(page.seo.description, locale, defaultLocale),
+        imageObjectKey: imageId ? (route.assets[imageId] ?? null) : null,
+        noindex: (page.seo.noindex ?? false) || !contentLocales.includes(locale),
+      },
+    };
+  };
 
   const base = (): ResolvedRoute => ({
     kind: "not_found",
@@ -312,7 +329,7 @@ export async function resolveRoute(db: Database, ref: StoreRef, site: SiteDto, r
     collection: null,
     listing: null,
     search: null,
-    breadcrumbs: [{ name: localizedText({ tr: "Ana sayfa", en: "Home" }, locale, "tr"), path: lp("/") }],
+    breadcrumbs: [{ name: routeLabel(locale, "home"), path: lp("/") }],
     assets: {},
     cacheTtlSeconds: ttl,
   });
@@ -379,13 +396,7 @@ export async function resolveRoute(db: Database, ref: StoreRef, site: SiteDto, r
       kind: "home",
       status: 200,
       canonicalPath: lp("/"),
-      alternates: alternatesFor(() => "/"),
-      seo: {
-        title: localizedText(page.seo.title, locale, defaultLocale) || site.name,
-        description: localizedText(page.seo.description, locale, defaultLocale),
-        imageObjectKey: null,
-        noindex: page.seo.noindex ?? false,
-      },
+      ...pageSeo(page, route, "/", site.name),
       breadcrumbs: [],
     };
   }
@@ -461,7 +472,7 @@ export async function resolveRoute(db: Database, ref: StoreRef, site: SiteDto, r
       });
       const listing: ListingDto = { items: res.items, total: res.total, page: lq.page, pageSize, sort: lq.sort, appliedFilters: lq.applied };
       await renderPage("collection", "default", route, async (s) => (s.type === "collection-main" ? { listing, collection: col } : bindCommon(s)));
-      const title = col?.title ?? localizedText({ tr: "Tüm ürünler", en: "All products" }, locale, "tr");
+      const title = col?.title ?? routeLabel(locale, "allProducts");
       const collectionPath = lp(`/collections/${col?.handle ?? "all"}`);
       return {
         ...route,
@@ -497,13 +508,7 @@ export async function resolveRoute(db: Database, ref: StoreRef, site: SiteDto, r
           kind: type,
           status: 200,
           canonicalPath: page.seo.canonicalPath ? lp(page.seo.canonicalPath) : lp(`/pages/${page.handle}`),
-          alternates: alternatesFor(() => `/pages/${page.handle}`),
-          seo: {
-            title: localizedText(page.seo.title, locale, defaultLocale) || title,
-            description: localizedText(page.seo.description, locale, defaultLocale),
-            imageObjectKey: null,
-            noindex: page.seo.noindex ?? false,
-          },
+          ...pageSeo(page, route, `/pages/${page.handle}`, title),
           breadcrumbs: [route.breadcrumbs[0]!, { name: title, path: lp(`/pages/${page.handle}`) }],
         };
       }
@@ -542,6 +547,12 @@ export async function resolveRoute(db: Database, ref: StoreRef, site: SiteDto, r
   // --- Redirects (manual or from slug changes), then 404
   const redirect = await findRedirect(db, ref, req.path.split("?")[0]!.replace(/\/+$/, "") || "/");
   if (redirect) return { ...route, kind: "redirect", status: redirect.statusCode === 302 ? 302 : 301, redirectTo: redirect.toPath };
+  // Page handles are shared by every language, so their slug-change 301s are stored once,
+  // without a language prefix; they apply under each prefix too.
+  if (locale !== defaultLocale && kind === "pages") {
+    const moved = await findRedirect(db, ref, path);
+    if (moved?.source === "slug_change" && moved.toPath.startsWith("/")) return { ...route, kind: "redirect", status: 301, redirectTo: lp(moved.toPath) };
+  }
   await renderPage("not_found", "default", route, bindCommon);
   return { ...route, seo: { ...route.seo, noindex: true }, cacheTtlSeconds: 60 };
 }

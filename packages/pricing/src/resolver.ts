@@ -28,7 +28,14 @@ export interface ResolvedPrice {
   currency: string;
   /** Unit price in minor units for the given quantity. */
   amount: bigint;
-  /** Strike-through price, only when greater than amount. */
+  /**
+   * Merchant-typed compare-at amount (for a sale/segment list without one, the regular base
+   * price), only when greater than amount. Kept as-is for admin editing and existing
+   * integrations, but it is not a lawful previous price: the Ticari Reklam rule requires the
+   * price shown struck through to come from the prices actually applied. Shopper-facing
+   * displays use resolveDisplayPrices (history.ts), whose previousAmount is derived from
+   * price_history.
+   */
   compareAtAmount: bigint | null;
   priceListId: string;
   priceListKind: PriceListKind;
@@ -38,48 +45,89 @@ export interface ResolvedPrice {
 /** Tie-breaker between lists with equal priority: more specific kinds win. */
 const KIND_RANK: Record<PriceListKind, number> = { scheduled: 5, customer_group: 4, channel: 3, sale: 2, base: 1 };
 
-interface CandidateList {
+export interface CandidateList {
   id: string;
   kind: PriceListKind;
   priority: number;
+  isActive: boolean;
+}
+
+/** Resolution order between two lists: priority desc, kind specificity desc, id asc. */
+export function compareListRank(a: CandidateList, b: CandidateList): number {
+  return b.priority - a.priority || KIND_RANK[b.kind] - KIND_RANK[a.kind] || a.id.localeCompare(b.id);
 }
 
 /**
- * Returns the price lists applicable to the context, ordered deterministically:
- * priority desc, kind specificity desc, id asc. A list restricted by channel, customer
- * group or schedule applies only when every restriction it has is satisfied.
+ * Price lists of a store and currency with their channel, customer-group and schedule
+ * restrictions: the active ones, or every list when loaded for price history (a deactivated
+ * list's prices were applied while it was active).
  */
-export async function applicableLists(tx: Transaction, ctx: PriceContext): Promise<CandidateList[]> {
+export interface PriceListRules {
+  lists: CandidateList[];
+  channelLinks: { priceListId: string; channelId: string }[];
+  groupLinks: { priceListId: string; customerGroupId: string }[];
+  windows: { priceListId: string; startsAt: Date; endsAt: Date | null }[];
+}
+
+export async function loadPriceListRules(tx: Transaction, ctx: PriceContext, opts: { includeInactive?: boolean } = {}): Promise<PriceListRules> {
   const lists = await tx
-    .select({ id: priceLists.id, kind: priceLists.kind, priority: priceLists.priority })
+    .select({ id: priceLists.id, kind: priceLists.kind, priority: priceLists.priority, isActive: priceLists.isActive })
     .from(priceLists)
-    .where(and(eq(priceLists.storeId, ctx.storeId), eq(priceLists.currency, ctx.currency), eq(priceLists.isActive, true)));
-  if (!lists.length) return [];
+    .where(and(eq(priceLists.storeId, ctx.storeId), eq(priceLists.currency, ctx.currency), opts.includeInactive ? undefined : eq(priceLists.isActive, true)));
+  if (!lists.length) return { lists, channelLinks: [], groupLinks: [], windows: [] };
   const ids = lists.map((l) => l.id);
   const [channelLinks, groupLinks, windows] = await Promise.all([
-    tx.select().from(channelPrices).where(inArray(channelPrices.priceListId, ids)),
-    tx.select().from(customerGroupPrices).where(inArray(customerGroupPrices.priceListId, ids)),
-    tx.select().from(scheduledPrices).where(inArray(scheduledPrices.priceListId, ids)),
+    tx.select({ priceListId: channelPrices.priceListId, channelId: channelPrices.channelId }).from(channelPrices).where(inArray(channelPrices.priceListId, ids)),
+    tx
+      .select({ priceListId: customerGroupPrices.priceListId, customerGroupId: customerGroupPrices.customerGroupId })
+      .from(customerGroupPrices)
+      .where(inArray(customerGroupPrices.priceListId, ids)),
+    tx
+      .select({ priceListId: scheduledPrices.priceListId, startsAt: scheduledPrices.startsAt, endsAt: scheduledPrices.endsAt })
+      .from(scheduledPrices)
+      .where(inArray(scheduledPrices.priceListId, ids)),
   ]);
-  const at = ctx.at ?? new Date();
-  const groups = new Set(ctx.customerGroupIds ?? []);
+  return { lists, channelLinks, groupLinks, windows };
+}
 
-  return lists
-    .filter((l) => {
-      if (l.kind === "base") return true;
-      if (ctx.baseOnly) return false;
-      const ch = channelLinks.filter((c) => c.priceListId === l.id);
-      if (ch.length && !(ctx.channelId && ch.some((c) => c.channelId === ctx.channelId))) return false;
-      const gr = groupLinks.filter((g) => g.priceListId === l.id);
-      if (gr.length && !gr.some((g) => groups.has(g.customerGroupId))) return false;
-      if (l.kind === "customer_group" && !gr.length) return false;
-      if (l.kind === "channel" && !ch.length) return false;
-      const win = windows.filter((w) => w.priceListId === l.id);
-      if (win.length && !win.some((w) => w.startsAt <= at && (!w.endsAt || w.endsAt > at))) return false;
-      if (l.kind === "scheduled" && !win.length) return false;
-      return true;
-    })
-    .sort((a, b) => b.priority - a.priority || KIND_RANK[b.kind] - KIND_RANK[a.kind] || a.id.localeCompare(b.id));
+/**
+ * Whether a list's audience admits the context, independent of time: a list restricted by
+ * channel or customer group applies only when every restriction it has is satisfied, and a
+ * channel or customer_group list without its restriction never applies.
+ */
+export function servesAudience(rules: PriceListRules, list: CandidateList, ctx: PriceContext): boolean {
+  if (list.kind === "base") return true;
+  if (ctx.baseOnly) return false;
+  const ch = rules.channelLinks.filter((c) => c.priceListId === list.id);
+  if (ch.length && !(ctx.channelId && ch.some((c) => c.channelId === ctx.channelId))) return false;
+  const groups = new Set(ctx.customerGroupIds ?? []);
+  const gr = rules.groupLinks.filter((g) => g.priceListId === list.id);
+  if (gr.length && !gr.some((g) => groups.has(g.customerGroupId))) return false;
+  if (list.kind === "customer_group" && !gr.length) return false;
+  if (list.kind === "channel" && !ch.length) return false;
+  return true;
+}
+
+/** Whether a list is inside one of its schedule windows at `at`; a scheduled list without windows never is. */
+export function inSchedule(rules: PriceListRules, list: CandidateList, at: Date): boolean {
+  if (list.kind === "base") return true;
+  const win = rules.windows.filter((w) => w.priceListId === list.id);
+  if (!win.length) return list.kind !== "scheduled";
+  return win.some((w) => w.startsAt <= at && (!w.endsAt || w.endsAt > at));
+}
+
+/**
+ * The active lists applicable to the context right now (or at ctx.at), ordered
+ * deterministically (compareListRank).
+ */
+export function rankApplicableLists(rules: PriceListRules, ctx: PriceContext): CandidateList[] {
+  const at = ctx.at ?? new Date();
+  return rules.lists.filter((l) => l.isActive && servesAudience(rules, l, ctx) && inSchedule(rules, l, at)).sort(compareListRank);
+}
+
+/** Returns the price lists applicable to the context in resolution order (see rankApplicableLists). */
+export async function applicableLists(tx: Transaction, ctx: PriceContext): Promise<CandidateList[]> {
+  return rankApplicableLists(await loadPriceListRules(tx, ctx), ctx);
 }
 
 /**
@@ -93,10 +141,19 @@ export async function resolvePrices(
   ctx: PriceContext,
   items: { variantId: string; quantity?: number }[],
 ): Promise<Map<string, ResolvedPrice>> {
+  if (!items.length) return new Map();
+  return resolveFromLists(tx, ctx, await applicableLists(tx, ctx), items);
+}
+
+/** resolvePrices over an already ranked list set (callers that also need the rules load them once). */
+export async function resolveFromLists(
+  tx: Transaction,
+  ctx: PriceContext,
+  lists: CandidateList[],
+  items: { variantId: string; quantity?: number }[],
+): Promise<Map<string, ResolvedPrice>> {
   const result = new Map<string, ResolvedPrice>();
-  if (!items.length) return result;
-  const lists = await applicableLists(tx, ctx);
-  if (!lists.length) return result;
+  if (!items.length || !lists.length) return result;
   const variantIds = [...new Set(items.map((i) => i.variantId))];
   const amounts = await tx
     .select()
@@ -113,7 +170,7 @@ export async function resolvePrices(
       if (!tier) continue;
       let compareAt = tier.compareAtAmount;
       if (compareAt === null && base && list.id !== base.id) {
-        // A sale/segment price is shown against the regular (base) price.
+        // A sale/segment price is compared against the regular (base) price.
         const regular = amounts
           .filter((a) => a.priceListId === base.id && a.variantId === item.variantId && a.minQuantity === 1)
           .at(0);

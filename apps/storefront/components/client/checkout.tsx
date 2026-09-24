@@ -5,6 +5,7 @@ import type { AddressView, ApiErrorBody } from "@/lib/client/cart-types";
 import { track } from "@/lib/client/track";
 import { syncAttribution } from "@/lib/client/attribution";
 import { formatMoney } from "@/lib/format";
+import { interpolate, pickDictionary, type UiDictionaries } from "@/lib/ui-locale";
 import { CartLines, CartSummary, useCart } from "./cart";
 
 interface Rate {
@@ -22,40 +23,56 @@ interface PaymentStart {
   payment: { provider: "paytr" | "iyzico"; kind: string; url: string | null; html: string | null };
 }
 
-const T = {
-  tr: {
-    contact: "İletişim",
-    email: "E-posta",
-    phone: "Telefon",
-    marketing: "Kampanya ve yeniliklerden e-posta ile haberdar olmak istiyorum.",
-    shipping: "Teslimat adresi",
-    firstName: "Ad",
-    lastName: "Soyad",
-    address: "Adres",
-    district: "Mahalle / Semt",
-    city: "İlçe",
-    province: "İl",
-    postalCode: "Posta kodu",
-    identity: "T.C. kimlik no (fatura için, isteğe bağlı)",
-    method: "Kargo seçimi",
-    free: "Ücretsiz",
-    days: "iş günü",
-    payment: "Ödeme",
-    pay: "Ödemeye geç",
-    continue: "Devam et",
-    edit: "Düzenle",
-    paying: "Güvenli ödeme sayfası yükleniyor…",
-    secure: "Kart bilgileriniz ödeme kuruluşu tarafından işlenir; mağaza kart bilgilerinizi görmez.",
-    errors: {
-      default: "İşlem tamamlanamadı. Lütfen bilgileri kontrol edip tekrar deneyin.",
-      phone_required: "Bu ödeme yöntemi için telefon numarası gerekli.",
-      unavailable_lines: "Sepetinizdeki bazı ürünler artık satışta değil.",
-      shipping_method_required: "Lütfen kargo seçin.",
-      payment_session_failed: "Ödeme sayfası açılamadı. Lütfen tekrar deneyin.",
-      no_active_provider: "Mağaza şu anda online ödeme kabul etmiyor.",
-    } as Record<string, string>,
+const T_TR = {
+  title: "Siparişi tamamla",
+  contact: "İletişim",
+  email: "E-posta",
+  phone: "Telefon",
+  marketing: "Kampanya ve yeniliklerden e-posta ile haberdar olmak istiyorum.",
+  shipping: "Teslimat adresi",
+  firstName: "Ad",
+  lastName: "Soyad",
+  address: "Adres",
+  district: "Mahalle / Semt",
+  city: "İlçe",
+  province: "İl",
+  postalCode: "Posta kodu",
+  identity: "T.C. kimlik no (fatura için, isteğe bağlı)",
+  method: "Kargo seçimi",
+  noShipping: "Bu adrese gönderim seçeneği bulunmuyor.",
+  free: "Ücretsiz",
+  days: "iş günü",
+  payment: "Ödeme",
+  card: "Kredi / banka kartı ({provider})",
+  pay: "Ödemeye geç",
+  continue: "Devam et",
+  edit: "Düzenle",
+  paying: "Güvenli ödeme sayfası yükleniyor…",
+  secure: "Kart bilgileriniz ödeme kuruluşu tarafından işlenir; mağaza kart bilgilerinizi görmez.",
+  cartEmpty: "Sepetiniz boş",
+  thanks: "Siparişiniz alındı!",
+  orderNumber: "Sipariş numarası",
+  confirmationSent: "Onay bilgileri {email} adresine gönderilecek.",
+  continueShopping: "Alışverişe devam et",
+  paymentFailed: "Ödeme tamamlanamadı",
+  noCharge: "Ödeme alınmadı. Tekrar deneyebilirsiniz.",
+  tryAgain: "Tekrar dene",
+  confirming: "Ödemeniz doğrulanıyor…",
+  fewSeconds: "Bu işlem genellikle birkaç saniye sürer.",
+  errors: {
+    default: "İşlem tamamlanamadı. Lütfen bilgileri kontrol edip tekrar deneyin.",
+    phone_required: "Bu ödeme yöntemi için telefon numarası gerekli.",
+    unavailable_lines: "Sepetinizdeki bazı ürünler artık satışta değil.",
+    shipping_method_required: "Lütfen kargo seçin.",
+    payment_session_failed: "Ödeme sayfası açılamadı. Lütfen tekrar deneyin.",
+    no_active_provider: "Mağaza şu anda online ödeme kabul etmiyor.",
   },
+};
+
+const T: UiDictionaries<typeof T_TR> = {
+  tr: T_TR,
   en: {
+    title: "Checkout",
     contact: "Contact",
     email: "E-mail",
     phone: "Phone",
@@ -70,14 +87,26 @@ const T = {
     postalCode: "Postal code",
     identity: "National ID (optional, for invoices)",
     method: "Shipping method",
+    noShipping: "No shipping option is available for this address.",
     free: "Free",
     days: "business days",
     payment: "Payment",
+    card: "Credit / debit card ({provider})",
     pay: "Continue to payment",
     continue: "Continue",
     edit: "Edit",
     paying: "Loading secure payment page…",
     secure: "Card details are processed by the payment provider; the store never sees them.",
+    cartEmpty: "Your cart is empty",
+    thanks: "Thank you for your order!",
+    orderNumber: "Order number",
+    confirmationSent: "A confirmation will be sent to {email}.",
+    continueShopping: "Continue shopping",
+    paymentFailed: "Payment was not completed",
+    noCharge: "No charge was made. You can try again.",
+    tryAgain: "Try again",
+    confirming: "Confirming your payment…",
+    fewSeconds: "This usually takes a few seconds.",
     errors: {
       default: "Could not complete this step. Please check your details and try again.",
       phone_required: "A phone number is required for this payment method.",
@@ -85,9 +114,194 @@ const T = {
       shipping_method_required: "Please choose a shipping method.",
       payment_session_failed: "Could not open the payment page. Please try again.",
       no_active_provider: "The store is not accepting online payments right now.",
-    } as Record<string, string>,
+    },
+  },
+  de: {
+    title: "Kasse",
+    contact: "Kontakt",
+    email: "E-Mail",
+    phone: "Telefon",
+    marketing: "Ich möchte per E-Mail über Angebote und Neuigkeiten informiert werden.",
+    shipping: "Lieferadresse",
+    firstName: "Vorname",
+    lastName: "Nachname",
+    address: "Adresse",
+    district: "Stadtteil",
+    city: "Bezirk / Stadt",
+    province: "Provinz / Bundesland",
+    postalCode: "Postleitzahl",
+    identity: "Ausweisnummer (optional, für die Rechnung)",
+    method: "Versandart",
+    noShipping: "Für diese Adresse ist keine Versandoption verfügbar.",
+    free: "Kostenlos",
+    days: "Werktage",
+    payment: "Zahlung",
+    card: "Kredit-/Debitkarte ({provider})",
+    pay: "Weiter zur Zahlung",
+    continue: "Weiter",
+    edit: "Bearbeiten",
+    paying: "Sichere Zahlungsseite wird geladen…",
+    secure: "Ihre Kartendaten werden vom Zahlungsdienstleister verarbeitet; der Shop sieht sie nie.",
+    cartEmpty: "Ihr Warenkorb ist leer",
+    thanks: "Vielen Dank für Ihre Bestellung!",
+    orderNumber: "Bestellnummer",
+    confirmationSent: "Eine Bestätigung wird an {email} gesendet.",
+    continueShopping: "Weiter einkaufen",
+    paymentFailed: "Die Zahlung wurde nicht abgeschlossen",
+    noCharge: "Es wurde nichts abgebucht. Sie können es erneut versuchen.",
+    tryAgain: "Erneut versuchen",
+    confirming: "Ihre Zahlung wird bestätigt…",
+    fewSeconds: "Das dauert in der Regel nur wenige Sekunden.",
+    errors: {
+      default: "Dieser Schritt konnte nicht abgeschlossen werden. Bitte prüfen Sie Ihre Angaben und versuchen Sie es erneut.",
+      phone_required: "Für diese Zahlungsart ist eine Telefonnummer erforderlich.",
+      unavailable_lines: "Einige Artikel in Ihrem Warenkorb sind nicht mehr verfügbar.",
+      shipping_method_required: "Bitte wählen Sie eine Versandart.",
+      payment_session_failed: "Die Zahlungsseite konnte nicht geöffnet werden. Bitte versuchen Sie es erneut.",
+      no_active_provider: "Der Shop akzeptiert derzeit keine Online-Zahlungen.",
+    },
+  },
+  ar: {
+    title: "إتمام الشراء",
+    contact: "معلومات التواصل",
+    email: "البريد الإلكتروني",
+    phone: "الهاتف",
+    marketing: "أرغب في تلقي العروض والأخبار عبر البريد الإلكتروني.",
+    shipping: "عنوان التوصيل",
+    firstName: "الاسم الأول",
+    lastName: "اسم العائلة",
+    address: "العنوان",
+    district: "الحي",
+    city: "المنطقة / المدينة",
+    province: "المحافظة / الولاية",
+    postalCode: "الرمز البريدي",
+    identity: "رقم الهوية الوطنية (اختياري، للفاتورة)",
+    method: "طريقة الشحن",
+    noShipping: "لا يتوفر خيار شحن لهذا العنوان.",
+    free: "مجاني",
+    days: "أيام عمل",
+    payment: "الدفع",
+    card: "بطاقة ائتمان / خصم ({provider})",
+    pay: "المتابعة إلى الدفع",
+    continue: "متابعة",
+    edit: "تعديل",
+    paying: "جارٍ تحميل صفحة الدفع الآمنة…",
+    secure: "تتم معالجة بيانات بطاقتك من قِبل مزوّد خدمة الدفع، ولا يطّلع المتجر عليها أبدًا.",
+    cartEmpty: "سلة التسوق فارغة",
+    thanks: "شكرًا لطلبك!",
+    orderNumber: "رقم الطلب",
+    confirmationSent: "سيتم إرسال تأكيد الطلب إلى {email}.",
+    continueShopping: "متابعة التسوق",
+    paymentFailed: "لم تكتمل عملية الدفع",
+    noCharge: "لم يتم خصم أي مبلغ. يمكنك المحاولة مرة أخرى.",
+    tryAgain: "حاول مرة أخرى",
+    confirming: "جارٍ تأكيد الدفع…",
+    fewSeconds: "يستغرق ذلك عادةً بضع ثوانٍ.",
+    errors: {
+      default: "تعذّر إكمال هذه الخطوة. يرجى التحقق من بياناتك والمحاولة مرة أخرى.",
+      phone_required: "رقم الهاتف مطلوب لطريقة الدفع هذه.",
+      unavailable_lines: "بعض المنتجات في سلتك لم تعد متوفرة.",
+      shipping_method_required: "يرجى اختيار طريقة الشحن.",
+      payment_session_failed: "تعذّر فتح صفحة الدفع. يرجى المحاولة مرة أخرى.",
+      no_active_provider: "لا يقبل المتجر المدفوعات الإلكترونية حاليًا.",
+    },
+  },
+  ru: {
+    title: "Оформление заказа",
+    contact: "Контактные данные",
+    email: "E-mail",
+    phone: "Телефон",
+    marketing: "Я хочу получать новости и специальные предложения по e-mail.",
+    shipping: "Адрес доставки",
+    firstName: "Имя",
+    lastName: "Фамилия",
+    address: "Адрес",
+    district: "Микрорайон",
+    city: "Район / город",
+    province: "Область / регион",
+    postalCode: "Почтовый индекс",
+    identity: "Идентификационный номер (необязательно, для счёта)",
+    method: "Способ доставки",
+    noShipping: "Для этого адреса нет доступных способов доставки.",
+    free: "Бесплатно",
+    days: "рабочих дней",
+    payment: "Оплата",
+    card: "Кредитная / дебетовая карта ({provider})",
+    pay: "Перейти к оплате",
+    continue: "Продолжить",
+    edit: "Изменить",
+    paying: "Загружается защищённая страница оплаты…",
+    secure: "Данные карты обрабатывает платёжная система; магазин их не видит.",
+    cartEmpty: "Ваша корзина пуста",
+    thanks: "Спасибо за заказ!",
+    orderNumber: "Номер заказа",
+    confirmationSent: "Подтверждение будет отправлено на {email}.",
+    continueShopping: "Продолжить покупки",
+    paymentFailed: "Оплата не завершена",
+    noCharge: "Средства не списаны. Вы можете попробовать ещё раз.",
+    tryAgain: "Попробовать снова",
+    confirming: "Подтверждаем оплату…",
+    fewSeconds: "Обычно это занимает несколько секунд.",
+    errors: {
+      default: "Не удалось выполнить этот шаг. Проверьте данные и попробуйте ещё раз.",
+      phone_required: "Для этого способа оплаты требуется номер телефона.",
+      unavailable_lines: "Некоторые товары в корзине больше недоступны.",
+      shipping_method_required: "Пожалуйста, выберите способ доставки.",
+      payment_session_failed: "Не удалось открыть страницу оплаты. Попробуйте ещё раз.",
+      no_active_provider: "Магазин сейчас не принимает онлайн-оплату.",
+    },
+  },
+  fr: {
+    title: "Finaliser la commande",
+    contact: "Coordonnées",
+    email: "E-mail",
+    phone: "Téléphone",
+    marketing: "Je souhaite recevoir par e-mail les offres et nouveautés.",
+    shipping: "Adresse de livraison",
+    firstName: "Prénom",
+    lastName: "Nom",
+    address: "Adresse",
+    district: "Quartier",
+    city: "Arrondissement / Ville",
+    province: "Province / Région",
+    postalCode: "Code postal",
+    identity: "Numéro d'identité (facultatif, pour la facture)",
+    method: "Mode de livraison",
+    noShipping: "Aucune option de livraison n'est disponible pour cette adresse.",
+    free: "Gratuit",
+    days: "jours ouvrés",
+    payment: "Paiement",
+    card: "Carte de crédit / débit ({provider})",
+    pay: "Procéder au paiement",
+    continue: "Continuer",
+    edit: "Modifier",
+    paying: "Chargement de la page de paiement sécurisée…",
+    secure: "Vos données de carte sont traitées par le prestataire de paiement\u00a0; la boutique n'y a jamais accès.",
+    cartEmpty: "Votre panier est vide",
+    thanks: "Merci pour votre commande\u00a0!",
+    orderNumber: "Numéro de commande",
+    confirmationSent: "Une confirmation sera envoyée à {email}.",
+    continueShopping: "Continuer mes achats",
+    paymentFailed: "Le paiement n'a pas abouti",
+    noCharge: "Aucun montant n'a été débité. Vous pouvez réessayer.",
+    tryAgain: "Réessayer",
+    confirming: "Confirmation de votre paiement…",
+    fewSeconds: "Cela ne prend généralement que quelques secondes.",
+    errors: {
+      default: "Impossible de finaliser cette étape. Veuillez vérifier vos informations et réessayer.",
+      phone_required: "Un numéro de téléphone est requis pour ce moyen de paiement.",
+      unavailable_lines: "Certains articles de votre panier ne sont plus disponibles.",
+      shipping_method_required: "Veuillez choisir un mode de livraison.",
+      payment_session_failed: "Impossible d'ouvrir la page de paiement. Veuillez réessayer.",
+      no_active_provider: "La boutique n'accepte pas les paiements en ligne pour le moment.",
+    },
   },
 };
+
+/** Maps an API error (problem code or message key suffix) to a checkout message. */
+function errorText(t: typeof T_TR, key: string): string {
+  return (t.errors as Record<string, string>)[key] ?? t.errors.default;
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -131,8 +345,10 @@ function PaytrFrame({ url }: { url: string }) {
 }
 
 export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase: string | null }) {
-  const t = locale === "en" ? T.en : T.tr;
-  const { cart, loading, request } = useCart();
+  const t = pickDictionary(T, locale);
+  // Every state of the checkout page carries the same H1; the steps below are H2s.
+  const title = <h1 className="sr-only">{t.title}</h1>;
+  const { cart, loading, request, localePath } = useCart();
   const [step, setStep] = useState<"contact" | "address" | "shipping" | "payment">("contact");
   const [rates, setRates] = useState<Rate[]>([]);
   const [methods, setMethods] = useState<{ provider: "paytr" | "iyzico"; requiresPhone: boolean }[]>([]);
@@ -161,19 +377,29 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(cart?.lines.length)]);
 
-  if (loading) return <p className="py-16 text-center" aria-busy="true">…</p>;
+  if (loading) {
+    return (
+      <>
+        {title}
+        <p className="py-16 text-center" aria-busy="true">…</p>
+      </>
+    );
+  }
   if (!cart?.lines.length) {
     return (
-      <p className="py-16 text-center">
-        <a href="/cart" className="underline">{locale === "en" ? "Your cart is empty" : "Sepetiniz boş"}</a>
-      </p>
+      <>
+        {title}
+        <p className="py-16 text-center">
+          <a href={localePath("/cart")} className="underline">{t.cartEmpty}</a>
+        </p>
+      </>
     );
   }
 
   const fail = (body: ApiErrorBody | null) => {
     const problems = (body?.error?.details?.problems as string[] | undefined) ?? [];
     const key = problems[0] ?? body?.error?.message_key?.split(".").pop() ?? "default";
-    setError(t.errors[key] ?? t.errors.default!);
+    setError(errorText(t, key));
   };
 
   async function submitContact(form: FormData) {
@@ -183,7 +409,7 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
     if (next) {
       setError(null);
       setStep(cart!.requiresShipping ? "address" : "payment");
-    } else setError(t.errors.default!);
+    } else setError(t.errors.default);
   }
 
   async function submitAddress(form: FormData) {
@@ -207,7 +433,7 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
       setRates(data.items ?? []);
       setError(null);
       setStep("shipping");
-    } else setError(t.errors.default!);
+    } else setError(t.errors.default);
     setBusy(false);
   }
 
@@ -241,6 +467,7 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
   const a = cart.shippingAddress;
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_24rem]">
+      {title}
       <div className="flex flex-col gap-8">
         {error && (
           <p role="alert" className="rounded-theme border border-error p-3 text-sm text-error">
@@ -303,7 +530,7 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
               <ul className="flex flex-col gap-2">
                 {rates.map((r) => (
                   <li key={r.id}>
-                    <button type="button" disabled={busy} onClick={() => void chooseRate(r.id)} className={`flex w-full justify-between rounded-theme border p-4 text-left ${cart.shipping?.rateId === r.id ? "border-fg" : "border-line"}`}>
+                    <button type="button" disabled={busy} onClick={() => void chooseRate(r.id)} className={`flex w-full justify-between rounded-theme border p-4 text-start ${cart.shipping?.rateId === r.id ? "border-fg" : "border-line"}`}>
                       <span>
                         {r.name}
                         {r.minDeliveryDays !== null && <span className="block text-xs text-muted-fg">{r.minDeliveryDays}–{r.maxDeliveryDays ?? r.minDeliveryDays} {t.days}</span>}
@@ -314,7 +541,7 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-error">{locale === "en" ? "No shipping option is available for this address." : "Bu adrese gönderim seçeneği bulunmuyor."}</p>
+              <p className="text-sm text-error">{t.noShipping}</p>
             )}
           </section>
         )}
@@ -334,7 +561,7 @@ export function CheckoutFlow({ locale, mediaBase }: { locale: string; mediaBase:
                     {methods.map((m) => (
                       <label key={m.provider} className="flex items-center gap-2 rounded-theme border border-line p-3">
                         <input type="radio" name="provider" checked={provider === m.provider} onChange={() => setProvider(m.provider)} />
-                        {m.provider === "paytr" ? "Kredi / banka kartı (PayTR)" : "Kredi / banka kartı (iyzico)"}
+                        {interpolate(t.card, { provider: m.provider === "paytr" ? "PayTR" : "iyzico" })}
                       </label>
                     ))}
                   </fieldset>
@@ -369,6 +596,8 @@ interface OrderStatusView {
 
 /** Order result page: the payment redirect is only a hint; the order state decides. */
 export function CheckoutComplete({ orderId, token, failedHint, locale }: { orderId: string; token: string; failedHint: boolean; locale: string }) {
+  const { localePath } = useCart();
+  const t = pickDictionary(T, locale);
   const [order, setOrder] = useState<OrderStatusView | null>(null);
   const [tries, setTries] = useState(0);
   useEffect(() => {
@@ -409,23 +638,23 @@ export function CheckoutComplete({ orderId, token, failedHint, locale }: { order
     <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-16 text-center" aria-live="polite">
       {paid ? (
         <>
-          <h1 className="text-3xl">{locale === "en" ? "Thank you for your order!" : "Siparişiniz alındı!"}</h1>
+          <h1 className="text-3xl">{t.thanks}</h1>
           <p>
-            {locale === "en" ? "Order number" : "Sipariş numarası"}: <strong>#{order.number}</strong>
+            {t.orderNumber}: <strong>#{order.number}</strong>
           </p>
-          <p className="text-muted-fg">{locale === "en" ? `A confirmation will be sent to ${order.email}.` : `Onay bilgileri ${order.email} adresine gönderilecek.`}</p>
-          <a href="/" className="btn btn-primary">{locale === "en" ? "Continue shopping" : "Alışverişe devam et"}</a>
+          {order.email && <p className="text-muted-fg">{interpolate(t.confirmationSent, { email: order.email })}</p>}
+          <a href={localePath("/")} className="btn btn-primary">{t.continueShopping}</a>
         </>
       ) : failed ? (
         <>
-          <h1 className="text-3xl">{locale === "en" ? "Payment was not completed" : "Ödeme tamamlanamadı"}</h1>
-          <p className="text-muted-fg">{locale === "en" ? "No charge was made. You can try again." : "Ödeme alınmadı. Tekrar deneyebilirsiniz."}</p>
-          <a href="/checkout" className="btn btn-primary">{locale === "en" ? "Try again" : "Tekrar dene"}</a>
+          <h1 className="text-3xl">{t.paymentFailed}</h1>
+          <p className="text-muted-fg">{t.noCharge}</p>
+          <a href={localePath("/checkout")} className="btn btn-primary">{t.tryAgain}</a>
         </>
       ) : (
         <>
-          <h1 className="text-2xl">{locale === "en" ? "Confirming your payment…" : "Ödemeniz doğrulanıyor…"}</h1>
-          <p className="text-muted-fg">{locale === "en" ? "This usually takes a few seconds." : "Bu işlem genellikle birkaç saniye sürer."}</p>
+          <h1 className="text-2xl">{t.confirming}</h1>
+          <p className="text-muted-fg">{t.fewSeconds}</p>
         </>
       )}
     </div>

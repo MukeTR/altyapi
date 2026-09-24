@@ -105,6 +105,45 @@ export const scheduledPrices = pgTable(
   (t) => [index("scheduled_prices_list_idx").on(t.priceListId), check("scheduled_prices_window", sql`${t.endsAt} is null or ${t.endsAt} > ${t.startsAt}`)],
 );
 
+/**
+ * Timeline of applied unit prices, the source of the "previous price" shown next to a
+ * discounted price (Ticari Reklam Yönetmeliği: the previous price is derived from what was
+ * actually charged, never typed). One row per period in which a price list entry for
+ * quantity 1 was in effect; the open row (valid_to null) mirrors the current money_amounts
+ * amount of an active list. Every write that changes such an amount closes the open row and
+ * opens a new one in the same transaction (packages/pricing, syncPriceHistory); writes that
+ * leave the amount unchanged (e.g. only compare_at_amount) add nothing.
+ *
+ * Every price lives in a price list (the base price in the store's base list), so
+ * price_list_id is set on every row it opens. It is nullable only so the history outlives a
+ * deleted list: a price that was charged still counts as a previous price afterwards.
+ */
+export const priceHistory = pgTable(
+  "price_history",
+  {
+    id: uuid().primaryKey(),
+    organizationId: uuid().notNull(),
+    storeId: uuid().notNull(),
+    variantId: uuid()
+      .notNull()
+      .references(() => productVariants.id, { onDelete: "cascade" }),
+    priceListId: uuid().references(() => priceLists.id, { onDelete: "set null" }),
+    currency: char({ length: 3 }).notNull(),
+    amountMinor: bigint({ mode: "bigint" }).notNull(),
+    validFrom: tstz().notNull(),
+    validTo: tstz(),
+    /** What set the price: manual (panel), api, agent, import (catalog file imports), system (other jobs), backfill. */
+    source: text().notNull(),
+  },
+  (t) => [
+    index("price_history_lookup_idx").on(t.storeId, t.variantId, t.currency, t.validFrom),
+    // At most one open period per list entry; also serializes concurrent writers.
+    uniqueIndex("price_history_open_uq").on(t.priceListId, t.variantId).where(sql`${t.validTo} is null`),
+    check("price_history_nonneg", sql`${t.amountMinor} >= 0`),
+    check("price_history_period", sql`${t.validTo} is null or ${t.validTo} > ${t.validFrom}`),
+  ],
+);
+
 /** Unit cost history; used by profit guard and the Kârmatik bridge. */
 export const variantCosts = pgTable(
   "variant_costs",

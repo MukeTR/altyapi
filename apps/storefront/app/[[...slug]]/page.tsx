@@ -5,6 +5,7 @@ import type { ResolvedRoute } from "@altyapi/theme-engine";
 import { fetchRoute } from "@/lib/api";
 import { getSite, renderCtx } from "@/lib/site";
 import { mediaUrl } from "@/lib/media";
+import { ogLocale } from "@/lib/i18n";
 import { Sections } from "@/components/sections/render";
 import { JsonLd } from "@/components/ui/json-ld";
 
@@ -36,26 +37,30 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   const { site } = await getSite();
   const { route } = await resolve(props);
   if (route.kind === "redirect") return {};
+  // Social image: the page's SEO image for home and content pages, else the product/collection image.
   const image = route.seo.imageObjectKey ? mediaUrl(site.mediaBaseUrl, route.seo.imageObjectKey, "social") : null;
+  // route.alternates only holds languages that have content of their own for this route, so
+  // hreflang is emitted only for a real set of translations.
+  const languages = Object.keys(route.alternates);
+  const xDefault = route.alternates[site.defaultLocale];
   return {
     title: route.kind === "home" ? { absolute: route.seo.title } : route.seo.title,
     description: route.seo.description || undefined,
     alternates: {
       canonical: route.canonicalPath,
-      languages: {
-        ...route.alternates,
-        ...(route.alternates[site.defaultLocale] ? { "x-default": route.alternates[site.defaultLocale] } : {}),
-      },
+      ...(languages.length > 1 ? { languages: { ...route.alternates, ...(xDefault ? { "x-default": xDefault } : {}) } } : {}),
     },
     openGraph: {
       title: route.seo.title,
       description: route.seo.description || undefined,
       url: route.canonicalPath,
       siteName: site.name,
-      locale: site.locale === "tr" ? "tr_TR" : site.locale,
-      type: route.kind === "product" ? "website" : "website",
-      ...(image ? { images: [{ url: image, width: 1200, height: 630 }] } : {}),
+      locale: ogLocale(route.locale),
+      alternateLocale: languages.filter((l) => l !== route.locale).map(ogLocale),
+      type: "website",
+      ...(image ? { images: [{ url: image, width: 1200, height: 630, alt: route.seo.title }] } : {}),
     },
+    ...(image ? { twitter: { card: "summary_large_image", images: [image] } } : {}),
     ...(route.seo.noindex || route.status === 404 ? { robots: { index: false, follow: true } } : {}),
   };
 }

@@ -1,0 +1,20 @@
+{
+  "name": "@altyapi/content",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@altyapi/commerce-core": "workspace:*",
+    "sanitize-html": "^2.17.7",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "^2.16.1"
+  }
+}

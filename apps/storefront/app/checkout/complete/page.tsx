@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
 import { getSite } from "@/lib/site";
+import { t } from "@/lib/i18n";
 import { CheckoutComplete } from "@/components/client/checkout";
 
-export const metadata: Metadata = { title: "Order", robots: { index: false, follow: false } };
+/** Title in the shopper's language (the layout appends the store name); never indexed. */
+export async function generateMetadata(): Promise<Metadata> {
+  const { site } = await getSite();
+  return { title: t(site.locale, "orderTitle"), robots: { index: false, follow: false } };
+}
 
 export default async function CompletePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const { site } = await getSite();

@@ -1,6 +1,6 @@
 import type { RenderSection, ResolvedLink } from "@altyapi/theme-engine";
 import { mediaUrl } from "@/lib/media";
-import { t } from "@/lib/i18n";
+import { htmlAttributes, localeName, t } from "@/lib/i18n";
 import { L, P, type RenderCtx } from "../context";
 import { AnnouncementBar } from "../client/announcement-bar";
 import { MobileMenu } from "../client/mobile-menu";
@@ -49,7 +49,7 @@ function DesktopNav({ links }: { links: ResolvedLink[] }) {
             {l.label}
           </a>
           {l.children?.length ? (
-            <ul className="invisible absolute left-0 top-full z-40 min-w-48 rounded-theme border border-line bg-surface p-3 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
+            <ul className="invisible absolute start-0 top-full z-40 min-w-48 rounded-theme border border-line bg-surface p-3 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
               {l.children.map((c) => (
                 <li key={c.href + c.label}>
                   <a href={c.href} className="block rounded px-2 py-1.5 hover:bg-muted">
@@ -77,8 +77,8 @@ export function Header({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
   return (
     <header data-section-type="header" className={`${p.sticky ? "sticky top-0" : ""} z-40 border-b border-line bg-surface/95 backdrop-blur`}>
-      <a href="#main" className="sr-only-focusable absolute left-2 top-2 z-50 bg-surface px-3 py-2">
-        {ctx.locale === "en" ? "Skip to content" : "İçeriğe atla"}
+      <a href="#main" className="sr-only-focusable absolute start-2 top-2 z-50 bg-surface px-3 py-2">
+        {t(ctx.locale, "skipToContent")}
       </a>
       <div className="container-theme flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -93,9 +93,17 @@ export function Header({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
             </form>
           )}
           {Boolean(p.showLocaleSwitcher) && ctx.site.supportedLocales.length > 1 && (
-            <nav aria-label="Language" className="flex gap-2 text-sm">
+            <nav aria-label={t(ctx.locale, "language")} className="flex gap-2 text-sm">
               {ctx.site.supportedLocales.map((l) => (
-                <a key={l} href={ctx.route?.alternates[l] ?? (l === ctx.defaultLocale ? "/" : `/${l}`)} hrefLang={l} aria-current={l === ctx.locale} className={l === ctx.locale ? "font-bold" : ""}>
+                <a
+                  key={l}
+                  href={ctx.route?.alternates[l] ?? (l === ctx.defaultLocale ? "/" : `/${l}`)}
+                  hrefLang={htmlAttributes(l).lang}
+                  lang={htmlAttributes(l).lang}
+                  title={localeName(l)}
+                  aria-current={l === ctx.locale}
+                  className={l === ctx.locale ? "font-bold" : ""}
+                >
                   {l.toUpperCase()}
                 </a>
               ))}
@@ -152,11 +160,11 @@ export function Footer({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
         ))}
         {Boolean(p.showNewsletter) && (
           <div className="flex flex-col gap-3">
-            <p className="font-medium">{ctx.locale === "en" ? "Newsletter" : "E-bülten"}</p>
+            <p className="font-medium">{t(ctx.locale, "newsletter")}</p>
             <NewsletterForm
               placeholder={t(ctx.locale, "email")}
               buttonLabel={t(ctx.locale, "subscribe")}
-              successMessage={ctx.locale === "en" ? "Thank you!" : "Teşekkürler!"}
+              successMessage={t(ctx.locale, "thankYou")}
               consentHtml=""
               source={`footer:${s.id}`}
               locale={ctx.locale}
@@ -168,7 +176,7 @@ export function Footer({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
         <p>
           © {new Date().getUTCFullYear()} {ctx.site.name}
         </p>
-        {Boolean(p.showPaymentIcons) && <p aria-label="Payment methods">VISA · Mastercard · Troy · American Express</p>}
+        {Boolean(p.showPaymentIcons) && <p aria-label={t(ctx.locale, "paymentMethods")}>VISA · Mastercard · Troy · American Express</p>}
       </div>
     </footer>
   );
@@ -198,7 +206,7 @@ export function PopupSection({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
           <NewsletterForm
             placeholder={t(ctx.locale, "email")}
             buttonLabel={t(ctx.locale, "subscribe")}
-            successMessage={ctx.locale === "en" ? "Thank you!" : "Teşekkürler!"}
+            successMessage={t(ctx.locale, "thankYou")}
             consentHtml=""
             source={`popup:${s.id}`}
             locale={ctx.locale}

@@ -115,11 +115,11 @@ export function Popup({
     placement === "bar"
       ? "fixed inset-x-0 bottom-0 z-50 p-4 shadow-lg"
       : placement === "slide-in"
-        ? "fixed bottom-4 right-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-theme p-6 shadow-xl"
+        ? "fixed bottom-4 end-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-theme p-6 shadow-xl"
         : "relative w-[min(32rem,calc(100vw-2rem))] rounded-theme p-6 shadow-xl";
   const content = (
     <div ref={dialog} data-scheme="default" className={panel} role="dialog" aria-modal={placement === "modal"} aria-labelledby={`${key}-title`}>
-      <button type="button" aria-label={labels.close} onClick={close} className="absolute right-3 top-2 text-xl">
+      <button type="button" aria-label={labels.close} onClick={close} className="absolute end-3 top-2 text-xl">
         ×
       </button>
       <div

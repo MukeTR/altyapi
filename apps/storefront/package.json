@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@altyapi/commerce-core": "workspace:*",
     "next": "^16.3.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
