@@ -3,6 +3,9 @@ import { parseEnv, workerEnvSchema, type WorkerEnv } from "@altyapi/config";
 import { createDatabase, type Database } from "@altyapi/database";
 import { createDomainDeps, type DomainDeps } from "@altyapi/domains";
 import { createQueue, type Queue } from "@altyapi/events";
+import { createKeyProvider } from "@altyapi/secrets";
+import { createProviderRegistry } from "@altyapi/checkout";
+import type { PaymentsDeps } from "@altyapi/payments";
 import { createLogger, type Logger } from "@altyapi/observability";
 
 export interface WorkerDeps {
@@ -12,6 +15,7 @@ export interface WorkerDeps {
   queue: Queue;
   logger: Logger;
   domains: DomainDeps;
+  payments: PaymentsDeps;
   close: () => Promise<void>;
 }
 
@@ -32,6 +36,7 @@ export function createWorkerDeps(source: Record<string, string | undefined> = pr
     queue: createQueue(env, database.db),
     logger,
     domains: createDomainDeps(env, database.db),
+    payments: { db: database.db, keys: createKeyProvider(env), registry: createProviderRegistry() },
     close: async () => {
       await database.close();
       redis.disconnect();

@@ -27,6 +27,12 @@ packages/
   catalog/        Ürün, varyant, seçenek, medya, koleksiyon (manuel/otomatik), kategori, vergi sınıfı, arama
   inventory/      Stok ledger'ı, lokasyonlar, rezervasyon, transfer
   pricing/        Fiyat listeleri, deterministik fiyat çözümleyici, maliyet geçmişi
+  secrets/        KMS uyumlu envelope encryption (AWS KMS / yerel geliştirme anahtarı)
+  payments/       Ödeme sağlayıcı sözleşmesi, şifreli bağlantılar, ödeme durum makinesi, olay kaydı
+  payment-paytr/  PayTR iFrame API adaptörü
+  payment-iyzico/ iyzico Checkout Form adaptörü
+  orders/         Sipariş, durum makinesi, fulfillment, kargo adaptör sözleşmesi, iade, refund
+  checkout/       Sepet, kargo, vergi, checkout orkestrasyonu, ödeme bildirimleri
 ```
 
 Diğer uygulama ve paketler (admin, storefront, worker, edge-router, catalog, payments, …)
@@ -157,3 +163,29 @@ Yerel geliştirmede R2 yerine MinIO kullanılabilir: `docker compose up -d minio
   Sepet, hesap, ödeme, arama ve önizleme sayfaları paylaşılan cache'e girmez.
 - Önizleme: `?preview_token=…` ile açılır (httpOnly cookie), `?exit_preview=1` ile kapanır; önizleme hiç önbelleklenmez.
 - Hedefleme (cihaz, rota, UTM, referrer, segment) istemci tarafında değerlendirilir; zamanlama sunucu tarafındadır.
+
+### Sepet, checkout ve ödeme
+
+- Sepet tarayıcıda bir token ile tutulur (DB'de yalnızca SHA-256). Fiyat, stok, kampanya, kargo ve KDV her
+  hesaplamada sunucuda yeniden okunur; istemciden gelen fiyat kullanılmaz.
+- Checkout: sepet doğrulanır → `awaiting_payment` sipariş (mağaza bazlı sıra numarası) → 30 dk stok
+  rezervasyonu → ödeme denemesi → sağlayıcı oturumu (PayTR iFrame / iyzico Checkout Form).
+  Değişmemiş bir sepette tekrar checkout aynı oturumu döner; sepet değişirse bekleyen sipariş iptal edilir.
+- Ödeme sonucu yalnızca doğrulanmış sağlayıcı bildirimiyle kesinleşir (dönüş URL'si sonuç kabul edilmez):
+  - PayTR: `POST /payments/v1/paytr/notify/:connectionId` — HMAC doğrulaması, cevap `OK`.
+    Bu URL mağaza sahibinin PayTR panelindeki "Bildirim URL" alanına girilir (ödeme ayarlarında gösterilir).
+  - iyzico: `POST /payments/v1/iyzico/callback/:attemptId` (tarayıcı) ve
+    `POST /payments/v1/iyzico/webhook/:connectionId` (X-IYZ-SIGNATURE-V3); sonuç her zaman sunucudan
+    sunucuya retrieve çağrısıyla alınır.
+- Olaylar `payment_events` tablosuna sağlayıcı olay kimliği ve payload hash'iyle bir kez yazılır; doğrulanmamış
+  payload'lar ayrı anahtarla saklanır ve gerçek olayı engelleyemez.
+- Sipariş ve ödeme durum makineleri ayrıdır. Başarılı ödeme: sipariş `confirmed`, rezervasyon → `order_confirmed`
+  ledger kaydı, sepet `completed`. İptal edilen siparişe gelen ödeme `payment_after_cancel` etiketiyle işaretlenir.
+- Worker: bildirimi gelmeyen denemeler için sağlayıcıdan durum sorgular; 45 dk ödenmeyen siparişleri
+  mutabakattan sonra iptal edip stoğu serbest bırakır.
+- İade: satır/kargo/ek tutar bazında, idempotency anahtarıyla; önce kayıt, sonra sağlayıcı çağrısı, sonra sonuç.
+  PayTR tutar bazlı, iyzico kalem (paymentTransactionId) bazlı iade eder.
+- Sağlayıcı kimlik bilgileri bağlanırken sağlayıcıyla doğrulanır, AES-256-GCM ile şifrelenir; veri anahtarı
+  KMS (üretim) veya `LOCAL_MASTER_KEY` (yalnızca geliştirme) ile sarılır. Kart verisi platformda tutulmaz.
+- Kargo: bölge (ülke/il) + ücret tipleri (sabit, ağırlık, sepet tutarı, ücretsiz kargo eşiği). Taşıyıcı
+  adaptör sözleşmesi (`createShipment`, `getLabel`, `track`, `cancel`) ve TR kargo firmaları için takip linkleri.

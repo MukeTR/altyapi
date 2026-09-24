@@ -64,6 +64,13 @@
       "when": 1790250167653,
       "tag": "0008_marketing_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790250547920,
+      "tag": "0009_checkout_orders_payments",
+      "breakpoints": true
     }
   ]
 }

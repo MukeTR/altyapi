@@ -6,6 +6,7 @@ import { consumeLoop, outboxLoop, schedulerLoop, type LoopControl } from "./loop
 import { domainEventHandlers, domainJobHandlers, flushEdgeContentVersions, scheduleDomainChecks } from "./handlers/domains";
 import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
 import { catalogEventHandlers, catalogJobHandlers, catalogScheduledTasks } from "./handlers/catalog";
+import { orderScheduledTasks } from "./handlers/orders";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
@@ -36,6 +37,7 @@ const loops = [
       { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
       { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db) },
       ...catalogScheduledTasks(deps),
+      ...orderScheduledTasks(deps),
     ],
     control,
   ),
