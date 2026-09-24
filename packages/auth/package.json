@@ -1,0 +1,19 @@
+{
+  "name": "@altyapi/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@altyapi/commerce-core": "workspace:*",
+    "@altyapi/database": "workspace:*",
+    "@altyapi/observability": "workspace:*",
+    "@node-rs/argon2": "^2.2.1",
+    "zod": "^4.6.5"
+  }
+}

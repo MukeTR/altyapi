@@ -1,0 +1,82 @@
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import cookie from "@fastify/cookie";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
+import {
+  createSerializerCompiler,
+  jsonSchemaTransform,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from "fastify-type-provider-zod";
+import { newId } from "@altyapi/commerce-core";
+import type { AppDeps } from "./deps";
+import { contextPlugin } from "./plugins/context";
+import { errorsPlugin } from "./plugins/errors";
+import { authPlugin } from "./plugins/auth";
+import { healthRoutes } from "./modules/health";
+import { authRoutes } from "./modules/auth";
+import { organizationRoutes } from "./modules/organizations";
+import { storeRoutes } from "./modules/stores";
+
+/** bigint (money minor units) is serialized as a decimal string on the wire. */
+const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
+
+export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const app = Fastify({
+    loggerInstance: deps.logger as FastifyBaseLogger,
+    genReqId: () => newId(),
+    trustProxy: true,
+    bodyLimit: 2 * 1024 * 1024,
+  }).withTypeProvider<ZodTypeProvider>();
+
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(createSerializerCompiler({ replacer: bigintReplacer }));
+
+  await app.register(contextPlugin);
+  await app.register(errorsPlugin);
+  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(cors, {
+    origin: [new URL(deps.env.ADMIN_URL).origin, ...deps.env.CORS_ALLOWED_ORIGINS],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    exposedHeaders: ["x-correlation-id"],
+  });
+  await app.register(cookie);
+  await app.register(rateLimit, {
+    global: true,
+    max: 600,
+    timeWindow: "1 minute",
+    redis: deps.redis,
+    nameSpace: "rl:",
+    keyGenerator: (req) => req.auth?.user.id ?? req.ip,
+  });
+  await app.register(swagger, {
+    openapi: {
+      openapi: "3.1.0",
+      info: { title: "altyapi.io Commerce API", version: "1.0.0" },
+      servers: [{ url: deps.env.API_URL }],
+      components: {
+        securitySchemes: {
+          session: { type: "apiKey", in: "cookie", name: deps.env.SESSION_COOKIE_NAME },
+          bearer: { type: "http", scheme: "bearer" },
+        },
+      },
+      security: [{ session: [] }, { bearer: [] }],
+    },
+    transform: jsonSchemaTransform,
+  });
+  if (deps.env.APP_ENV !== "production") {
+    await app.register(swaggerUi, { routePrefix: "/docs" });
+  }
+  await app.register(authPlugin, { deps });
+
+  await app.register(healthRoutes, { deps });
+  await app.register(authRoutes, { deps });
+  await app.register(organizationRoutes, { deps });
+  await app.register(storeRoutes, { deps });
+
+  return app as unknown as FastifyInstance;
+}

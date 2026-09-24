@@ -1,0 +1,21 @@
+{
+  "name": "altyapi",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @altyapi/database db:generate",
+    "db:migrate": "pnpm --filter @altyapi/database db:migrate",
+    "db:studio": "pnpm --filter @altyapi/database db:studio"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "turbo": "^2.11.3",
+    "typescript": "~6.0.3"
+  }
+}

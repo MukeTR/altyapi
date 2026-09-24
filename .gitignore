@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+.turbo/
+.wrangler/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+coverage/
+.DS_Store
+*.log
+.terraform/
+*.tfstate
+*.tfstate.*
