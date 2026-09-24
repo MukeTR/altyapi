@@ -56,6 +56,10 @@ export const cloudflareSchema = z.object({
   CLOUDFLARE_API_TOKEN: z.string().optional(),
   /** Zone that owns STORE_ROOT_DOMAIN and hosts Cloudflare for SaaS custom hostnames. */
   CLOUDFLARE_ZONE_ID: z.string().optional(),
+  /** Workers KV namespace holding the hostname → store routing projection (speed layer only). */
+  CLOUDFLARE_KV_ROUTING_NAMESPACE_ID: z.string().optional(),
+  /** Optional A/AAAA targets for apex domains; when empty, merchants use CNAME flattening/ALIAS. */
+  CUSTOM_DOMAIN_APEX_A_RECORDS: csv.default([]),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

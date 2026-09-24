@@ -1,0 +1,1 @@
+ALTER TABLE "store_domains" ADD COLUMN "validation_started_at" timestamp with time zone DEFAULT now() NOT NULL;

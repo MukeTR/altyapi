@@ -51,6 +51,8 @@ export const storeDomains = pgTable(
     verificationErrors: jsonb().$type<string[]>().notNull().default([]),
     failureReason: text(),
     checkAttempts: integer().notNull().default(0),
+    /** Start of the current DNS/SSL validation window (reset on merchant retry). */
+    validationStartedAt: tstz().notNull().defaultNow(),
     nextCheckAt: tstz(),
     lastCheckedAt: tstz(),
     activatedAt: tstz(),

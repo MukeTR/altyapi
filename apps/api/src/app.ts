@@ -20,6 +20,8 @@ import { healthRoutes } from "./modules/health";
 import { authRoutes } from "./modules/auth";
 import { organizationRoutes } from "./modules/organizations";
 import { storeRoutes } from "./modules/stores";
+import { domainRoutes } from "./modules/domains";
+import { createDomainDeps } from "@altyapi/domains";
 
 /** bigint (money minor units) is serialized as a decimal string on the wire. */
 const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
@@ -77,6 +79,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(authRoutes, { deps });
   await app.register(organizationRoutes, { deps });
   await app.register(storeRoutes, { deps });
+
+  const domainDeps = createDomainDeps(deps.env, deps.db);
+  await app.register(domainRoutes, { deps, domainDeps });
 
   return app as unknown as FastifyInstance;
 }

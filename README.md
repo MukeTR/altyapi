@@ -8,6 +8,8 @@ Multi-tenant, AI-native e-ticaret altyapısı. Ürün ve mimari kararlar için
 ```text
 apps/
   api/            Fastify commerce API (OpenAPI: /docs)
+  worker/         Outbox publisher, queue consumer'ları, scheduler
+  edge-router/    Cloudflare Worker: Host → mağaza çözümleme ve yönlendirme
 packages/
   config/         Typed environment şemaları (Zod)
   observability/  Logger, correlation context, tracing
@@ -17,6 +19,7 @@ packages/
   tenancy/        Organization, store, member servisleri ve StoreContext
   events/         Transactional outbox ve event kataloğu
   audit/          Redaksiyonlu audit log yazıcısı
+  domains/        Custom domain yaşam döngüsü, Cloudflare for SaaS, edge routing
 ```
 
 Diğer uygulama ve paketler (admin, storefront, worker, edge-router, catalog, payments, …)
@@ -32,6 +35,7 @@ docker compose up -d          # postgres + valkey (veya yerel kurulum)
 pnpm install
 pnpm db:migrate
 pnpm --filter @altyapi/api dev
+pnpm --filter @altyapi/worker dev
 ```
 
 API: http://localhost:4000 — OpenAPI UI: http://localhost:4000/docs
@@ -51,3 +55,22 @@ API: http://localhost:4000 — OpenAPI UI: http://localhost:4000/docs
 - Rol ataması organizasyon geneli (`store_id = null`) veya mağaza bazlı olabilir.
 - İzinler `resource:action` biçimindedir (`packages/auth/src/permissions.ts`).
 - Cookie ile kimliği doğrulanmış state-changing istekler yalnızca izinli origin'lerden kabul edilir.
+
+### Domain ve yayınlama
+
+- Her mağaza `{slug}.altyapi.store` adresini aktif ve canonical olarak alır.
+- Custom domain: `POST /v1/organizations/:org/stores/:store/domains`. Girilen apex (`ornek.com`)
+  için `www.ornek.com` mağazaya bağlanır, apex ise www'ye 301 yönlendirilir.
+- Durumlar: `pending → awaiting_dns → validating → certificate_pending → active` (+ `failed`, `moved`, `disabled`).
+  Worker, due olan domainleri Cloudflare Custom Hostname API üzerinden kontrol eder (backoff ile, 7 gün pencere).
+- Canonical domain seçildiğinde diğer hostname'ler canonical'a 301 yönlenir.
+- Routing değişiklikleri `stores.routing_version` artırır ve `domain.routing_changed` event'i üretir;
+  worker bu projeksiyonu Workers KV'ye yazar. KV yalnızca hız katmanıdır, kaynak PostgreSQL'dir.
+- Edge router, storefront'a `x-altyapi-*` metadata header'larını HMAC imzasıyla iletir.
+
+### Event ve job altyapısı
+
+- Servisler state değişikliğiyle aynı transaction'da `outbox_events` tablosuna yazar.
+- Worker outbox'ı kuyruğa taşır (`QUEUE_DRIVER=postgres` yerel, `sqs` AWS).
+- Consumer'lar `(consumer, message_id)` üzerinden idempotenttir; retry exponential backoff + jitter,
+  `QUEUE_MAX_ATTEMPTS` sonrası dead-letter.

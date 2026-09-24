@@ -7,6 +7,7 @@ export interface DomainEventMap {
   "member.invited": { memberId: string; email: string };
   "store.created": { storeId: string; slug: string; name: string };
   "domain.activated": { domainId: string; hostname: string; storeId: string };
+  "domain.routing_changed": { storeId: string; routingVersion: number; hostnames: string[] };
   "domain.status_changed": { domainId: string; hostname: string; from: string; to: string };
   "product.created": { productId: string };
   "product.published": { productId: string };

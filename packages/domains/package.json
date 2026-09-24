@@ -1,5 +1,5 @@
 {
-  "name": "@altyapi/events",
+  "name": "@altyapi/domains",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,13 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@altyapi/audit": "workspace:*",
+    "@altyapi/auth": "workspace:*",
     "@altyapi/commerce-core": "workspace:*",
     "@altyapi/database": "workspace:*",
+    "@altyapi/events": "workspace:*",
     "@altyapi/observability": "workspace:*",
-    "@aws-sdk/client-sqs": "^3.1139.0"
+    "@altyapi/tenancy": "workspace:*",
+    "zod": "^4.6.5"
   }
 }

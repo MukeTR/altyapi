@@ -1,0 +1,22 @@
+name = "altyapi-edge-router"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Attach to the Cloudflare for SaaS fallback origin and the platform wildcard:
+#   *.altyapi.store/*  and custom hostnames (routes = [{ pattern = "*/*", zone_name = "altyapi.store" }])
+routes = [
+  { pattern = "*/*", zone_name = "altyapi.store" }
+]
+
+[vars]
+STORE_ROOT_DOMAIN = "altyapi.store"
+API_ORIGIN = "https://api.altyapi.io"
+STOREFRONT_ORIGIN = "https://storefront-origin.altyapi.io"
+
+# Speed-layer projection of hostname → store routing. PostgreSQL remains the source of truth.
+[[kv_namespaces]]
+binding = "ROUTING"
+id = "<routing-kv-namespace-id>"
+
+# Secrets (wrangler secret put EDGE_ROUTING_SECRET)
+# EDGE_ROUTING_SECRET
