@@ -1,12 +1,14 @@
 import { Redis } from "ioredis";
 import { apiEnvSchema, parseEnv, type ApiEnv } from "@altyapi/config";
 import { createDatabase, type Database } from "@altyapi/database";
+import { createQueue, type Queue } from "@altyapi/events";
 import { createLogger, type Logger } from "@altyapi/observability";
 
 export interface AppDeps {
   env: ApiEnv;
   db: Database;
   redis: Redis;
+  queue: Queue;
   logger: Logger;
   close: () => Promise<void>;
 }
@@ -25,6 +27,7 @@ export function createDeps(source: Record<string, string | undefined> = process.
     env,
     db: database.db,
     redis,
+    queue: createQueue(env, database.db),
     logger,
     close: async () => {
       await database.close();

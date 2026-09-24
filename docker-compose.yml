@@ -10,5 +10,14 @@ services:
   valkey:
     image: valkey/valkey:8
     ports: ["6379:6379"]
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: altyapi
+      MINIO_ROOT_PASSWORD: altyapi-dev-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
 volumes:
   pgdata: {}
+  miniodata: {}

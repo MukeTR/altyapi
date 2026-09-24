@@ -26,6 +26,7 @@ import { createR2Storage } from "@altyapi/storage";
 import { assetRoutes } from "./modules/assets";
 import { storefrontRoutes } from "./modules/storefront";
 import { catalogRoutes } from "./modules/catalog";
+import { importRoutes } from "./modules/imports";
 
 /** bigint (money minor units) is serialized as a decimal string on the wire. */
 const bigintReplacer = (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value);
@@ -105,6 +106,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(assetRoutes, { deps, r2: createR2Storage(deps.env) });
   await app.register(storefrontRoutes, { deps });
   await app.register(catalogRoutes, { deps });
+  await app.register(importRoutes, { deps, queue: deps.queue });
 
   return app as unknown as FastifyInstance;
 }

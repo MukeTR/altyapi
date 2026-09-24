@@ -63,6 +63,8 @@ export const cloudflareSchema = z.object({
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Override for S3-compatible local development (MinIO); defaults to the account R2 endpoint. */
+  R2_ENDPOINT: z.url().optional(),
   R2_BUCKET_STOREFRONT_PUBLIC: z.string().default("storefront-public"),
   R2_BUCKET_MERCHANT_PRIVATE: z.string().default("merchant-private"),
   R2_BUCKET_IMPORTS_TEMPORARY: z.string().default("imports-temporary"),

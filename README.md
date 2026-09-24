@@ -119,3 +119,20 @@ Cloudflare Image Transformations ile üretilir (`thumbnail`, `card`, `product`, 
 - Fiyatlar tamsayı minor unit ve ISO para birimiyle `money_amounts` tablosunda tutulur. Uygulanabilir
   listeler `priority → tür → id` sırasıyla seçilir (kanal, müşteri grubu ve zaman penceresi kısıtları).
   Kampanya indirimleri fiyat çözümleyicide değil, sepet üzerinde kampanya motorunda uygulanır.
+
+### Ürün içe aktarma (CSV / Excel / XML)
+
+1. Dosya `purpose: "import"` ile yüklenir (`imports-temporary` bucket).
+2. `POST …/imports` iş oluşturur; worker örnek satırları okur, kolonları bulur ve TR/EN başlık
+   eşanlamlılarıyla otomatik eşleme önerir (`GET /v1/import-fields`).
+3. `PUT …/imports/:id/mapping` eşlemeyi kaydeder (istenirse profil olarak), önizleme ve satır hatalarını döner.
+4. `POST …/imports/:id/start` işlemeyi başlatır. Worker dosyayı `import_rows` tablosuna aktarır,
+   sonra ürün gruplarını 45 sn'lik parçalar halinde işler ve kaldığı yerden devam eder.
+5. Mevcut ürünler SKU / external ref / handle ile eşleşip güncellenir; stok mutlak değere ledger ile çekilir.
+6. Hatalı satırlar `import_row_errors`'a yazılır, bitişte `exports-temporary`'ye hata CSV'si üretilir.
+
+Fiyatlar `1.299,90`, `1,299.90`, `129,9`, `₺129,90` biçimlerinde kabul edilir (float kullanılmaz).
+XML için `xmlItemPath` (ör. `Urunler.Urun`) ve varyantlar için `xmlVariantPath` verilir.
+Görsel URL'leri yalnızca https ve genel IP adreslerinden indirilir (SSRF koruması, bağlantı anında IP doğrulama).
+
+Yerel geliştirmede R2 yerine MinIO kullanılabilir: `docker compose up -d minio` ve `R2_ENDPOINT=http://localhost:9000`.

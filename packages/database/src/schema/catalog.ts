@@ -463,6 +463,9 @@ export const importJobs = pgTable(
     failedCount: integer().notNull().default(0),
     /** Chunk checkpoint so a restarted job resumes instead of starting over. */
     lastProcessedRow: integer().notNull().default(0),
+    /** Last group key fully processed in pass 2 (groups are processed in key order). */
+    lastProcessedGroup: text(),
+    stagedAt: tstz(),
     errorReportAssetId: uuid(),
     failureReason: text(),
     requestedByPrincipalId: uuid(),
@@ -487,4 +490,24 @@ export const importRowErrors = pgTable(
     raw: jsonb().$type<Record<string, string>>().notNull(),
   },
   (t) => [index("import_row_errors_job_idx").on(t.jobId, t.rowNumber)],
+);
+
+/**
+ * Staging rows of an import. Pass 1 streams the file into this table; pass 2 processes
+ * groups (one product each) in order, checkpointing so a restarted job resumes.
+ */
+export const importRows = pgTable(
+  "import_rows",
+  {
+    jobId: uuid()
+      .notNull()
+      .references(() => importJobs.id, { onDelete: "cascade" }),
+    rowNumber: integer().notNull(),
+    storeId: uuid().notNull(),
+    organizationId: uuid().notNull(),
+    groupKey: text().notNull(),
+    data: jsonb().$type<Record<string, string>>().notNull(),
+    processed: boolean().notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.rowNumber] }), index("import_rows_group_idx").on(t.jobId, t.groupKey, t.rowNumber)],
 );

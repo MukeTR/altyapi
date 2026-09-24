@@ -95,6 +95,7 @@ export interface StorageEnv {
   R2_ACCOUNT_ID?: string | undefined;
   R2_ACCESS_KEY_ID?: string | undefined;
   R2_SECRET_ACCESS_KEY?: string | undefined;
+  R2_ENDPOINT?: string | undefined;
   R2_BUCKET_STOREFRONT_PUBLIC: string;
   R2_BUCKET_MERCHANT_PRIVATE: string;
   R2_BUCKET_IMPORTS_TEMPORARY: string;
@@ -109,6 +110,7 @@ export function createR2Storage(env: StorageEnv): R2Storage | null {
     accountId: env.R2_ACCOUNT_ID,
     accessKeyId: env.R2_ACCESS_KEY_ID,
     secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    ...(env.R2_ENDPOINT ? { endpoint: env.R2_ENDPOINT } : {}),
     buckets: {
       "storefront-public": env.R2_BUCKET_STOREFRONT_PUBLIC,
       "merchant-private": env.R2_BUCKET_MERCHANT_PRIVATE,

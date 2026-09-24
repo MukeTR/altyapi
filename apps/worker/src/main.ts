@@ -5,7 +5,7 @@ import { createWorkerDeps } from "./deps";
 import { consumeLoop, outboxLoop, schedulerLoop, type LoopControl } from "./loops";
 import { domainEventHandlers, domainJobHandlers, scheduleDomainChecks } from "./handlers/domains";
 import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
-import { catalogEventHandlers, catalogScheduledTasks } from "./handlers/catalog";
+import { catalogEventHandlers, catalogJobHandlers, catalogScheduledTasks } from "./handlers/catalog";
 import { createR2Storage } from "@altyapi/storage";
 import { runScheduledPublishing, syncBuiltinSectionDefinitions } from "@altyapi/theme-engine";
 
@@ -18,8 +18,8 @@ const runtime = new ConsumerRuntime({
   queue: deps.queue,
   logger: deps.logger,
   maxAttempts: deps.env.QUEUE_MAX_ATTEMPTS,
-  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps)],
-  jobHandlers: [...domainJobHandlers(deps)],
+  eventHandlers: [...domainEventHandlers(deps), ...assetEventHandlers(deps, r2), ...catalogEventHandlers(deps, r2)],
+  jobHandlers: [...domainJobHandlers(deps), ...catalogJobHandlers(deps, r2)],
 });
 
 await syncBuiltinSectionDefinitions(deps.db);

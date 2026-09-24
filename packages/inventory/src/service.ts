@@ -463,3 +463,32 @@ export async function receiveTransfer(db: Database, ctx: StoreContext, transferI
     return { ...t, status: "received" as const };
   });
 }
+
+/** Sets absolute on-hand quantity at a location (stock sync, imports) as a manual adjustment. */
+export async function setOnHand(
+  tx: Transaction,
+  scope: Scope,
+  input: { variantId: string; locationId: string; quantity: number; reason: string; idempotencyKey?: string },
+): Promise<LevelSnapshot | null> {
+  const v = await tx.query.productVariants.findFirst({ where: and(eq(productVariants.id, input.variantId), eq(productVariants.storeId, scope.storeId)) });
+  if (!v) throw notFound("variant", input.variantId);
+  const itemId = await ensureInventoryItem(tx, scope, v.id, v.sku);
+  await lockLevels(tx, scope, [{ inventoryItemId: itemId, locationId: input.locationId }]);
+  const [level] = await tx
+    .select()
+    .from(inventoryLevels)
+    .where(and(eq(inventoryLevels.inventoryItemId, itemId), eq(inventoryLevels.locationId, input.locationId)));
+  const delta = input.quantity - level!.onHand;
+  if (delta === 0) return null;
+  return applyLedgerEntry(tx, scope, {
+    inventoryItemId: itemId,
+    locationId: input.locationId,
+    type: "manual_adjustment",
+    quantity: Math.abs(delta),
+    signedDelta: delta,
+    reason: input.reason,
+    // Stock syncs may set on-hand below current reservations (oversold); orders keep their reservation.
+    allowNegativeAvailable: true,
+    ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+  });
+}
