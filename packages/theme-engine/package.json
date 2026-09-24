@@ -12,6 +12,7 @@
   "dependencies": {
     "@altyapi/audit": "workspace:*",
     "@altyapi/auth": "workspace:*",
+    "@altyapi/catalog": "workspace:*",
     "@altyapi/commerce-core": "workspace:*",
     "@altyapi/database": "workspace:*",
     "@altyapi/events": "workspace:*",

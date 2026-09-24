@@ -1,0 +1,22 @@
+{
+  "name": "@altyapi/marketing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@altyapi/audit": "workspace:*",
+    "@altyapi/auth": "workspace:*",
+    "@altyapi/commerce-core": "workspace:*",
+    "@altyapi/database": "workspace:*",
+    "@altyapi/events": "workspace:*",
+    "@altyapi/observability": "workspace:*",
+    "@altyapi/tenancy": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

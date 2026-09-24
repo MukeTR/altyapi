@@ -9,7 +9,8 @@ Multi-tenant, AI-native e-ticaret altyapısı. Ürün ve mimari kararlar için
 apps/
   api/            Fastify commerce API (OpenAPI: /docs)
   worker/         Outbox publisher, queue consumer'ları, scheduler
-  edge-router/    Cloudflare Worker: Host → mağaza çözümleme ve yönlendirme
+  edge-router/    Cloudflare Worker: Host → mağaza çözümleme, yönlendirme, sürümlü HTML cache
+  storefront/     Next.js çok kiracılı storefront (tek deployment, tüm mağazalar)
 packages/
   config/         Typed environment şemaları (Zod)
   observability/  Logger, correlation context, tracing
@@ -22,6 +23,7 @@ packages/
   domains/        Custom domain yaşam döngüsü, Cloudflare for SaaS, edge routing
   storage/        R2 depolama, presigned upload, asset işleme, görsel preset'leri
   theme-engine/   Section registry, tema token'ları, sayfalar, Draft → Preview → Publish, rollback
+  marketing/      Pazarlama iletişim izinleri, consent kayıtları (KVKK/İYS)
   catalog/        Ürün, varyant, seçenek, medya, koleksiyon (manuel/otomatik), kategori, vergi sınıfı, arama
   inventory/      Stok ledger'ı, lokasyonlar, rezervasyon, transfer
   pricing/        Fiyat listeleri, deterministik fiyat çözümleyici, maliyet geçmişi
@@ -41,6 +43,7 @@ pnpm install
 pnpm db:migrate
 pnpm --filter @altyapi/api dev
 pnpm --filter @altyapi/worker dev
+pnpm --filter @altyapi/storefront dev   # http://localhost:3001 (STOREFRONT_DEV_HOST mağazasını gösterir)
 ```
 
 API: http://localhost:4000 — OpenAPI UI: http://localhost:4000/docs
@@ -136,3 +139,21 @@ XML için `xmlItemPath` (ör. `Urunler.Urun`) ve varyantlar için `xmlVariantPat
 Görsel URL'leri yalnızca https ve genel IP adreslerinden indirilir (SSRF koruması, bağlantı anında IP doğrulama).
 
 Yerel geliştirmede R2 yerine MinIO kullanılabilir: `docker compose up -d minio` ve `R2_ENDPOINT=http://localhost:9000`.
+
+### Storefront
+
+- Tek Next.js uygulaması tüm mağazaları sunar. Edge router `x-altyapi-*` başlıklarını HMAC ile imzalar;
+  `proxy.ts` imzayı doğrular ve iç `x-sf-*` başlıklarını her istekte yeniden kurar (istemci enjekte edemez).
+- Storefront veritabanına bağlanmaz. Veriyi API'deki Storefront API'den (`/storefront/v1/site`, `/route`,
+  `/sitemap`) iç anahtarla (`STOREFRONT_API_SECRET`) alır. Route çözümleme; sayfa section'larını, bağlı ürün,
+  koleksiyon ve listeleme verisini, SEO alanlarını, hreflang alternatiflerini ve breadcrumb'ı tek yanıtta döner.
+- URL'ler: `/`, `/products/:handle`, `/collections/:handle` (+ `all`), `/pages/:handle`, `/search`, `/cart`;
+  varsayılan olmayan diller `/en/...` önekiyle sunulur. Eski handle'lar 301 ile yönlenir.
+- SEO/GEO: sunucu tarafı metadata, canonical (filtre/sıralama hariç, `?page=N` korunur), hreflang + x-default,
+  `robots.txt`, sitemap index + parçalı sitemap'ler, Product/Offer, BreadcrumbList, ItemList, FAQPage,
+  Organization ve WebSite JSON-LD, Open Graph.
+- Cache: Storefront API yanıtları içerik sürümünü içeren URL'lerle önbelleklenir. Edge router HTML'i
+  `content_version` içeren anahtarla Cloudflare cache'inde tutar; yayınlama anahtarı değiştirir.
+  Sepet, hesap, ödeme, arama ve önizleme sayfaları paylaşılan cache'e girmez.
+- Önizleme: `?preview_token=…` ile açılır (httpOnly cookie), `?exit_preview=1` ile kapanır; önizleme hiç önbelleklenmez.
+- Hedefleme (cihaz, rota, UTM, referrer, segment) istemci tarafında değerlendirilir; zamanlama sunucu tarafındadır.

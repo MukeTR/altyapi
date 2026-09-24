@@ -74,6 +74,8 @@ export const cloudflareSchema = z.object({
   MEDIA_PUBLIC_BASE_URL: z.url().optional(),
   /** Shared secret between edge-router and storefront/api for signed routing metadata. */
   EDGE_ROUTING_SECRET: z.string().min(32),
+  /** Internal key the storefront server uses to call the Storefront API. Never sent to browsers. */
+  STOREFRONT_API_SECRET: z.string().min(32),
 });
 
 export const awsSchema = z.object({

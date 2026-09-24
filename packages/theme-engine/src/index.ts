@@ -6,3 +6,5 @@ export * from "./defaults";
 export * from "./service";
 export * from "./live";
 export * from "./registry-sync";
+export * from "./render/types";
+export * from "./render/resolve";

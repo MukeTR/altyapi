@@ -17,6 +17,8 @@ export interface BuiltProduct {
   rowNumbers: number[];
   externalRef: string | null;
   handle: string;
+  /** Fields that had a non-empty value in at least one row; empty cells never overwrite data. */
+  provided: Set<ImportField>;
 }
 
 /**
@@ -141,8 +143,11 @@ export function buildProductFromRows(
     currency: options.currency,
     externalRef: first("external_ref") || null,
   };
+  const provided = new Set<ImportField>(
+    (Object.keys(mapping) as ImportField[]).filter((f) => rows.some((r) => val(r, f) !== "")),
+  );
   return {
-    product: { input, imageUrls, categoryHandle: first("category") || null, rowNumbers, externalRef: input.externalRef ?? null, handle },
+    product: { input, imageUrls, categoryHandle: first("category") || null, rowNumbers, externalRef: input.externalRef ?? null, handle, provided },
     errors,
   };
 }

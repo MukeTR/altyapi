@@ -17,12 +17,14 @@ interface RouteResolution {
   storeStatus: string;
   defaultLocale: string;
   routingVersion: number;
+  contentVersion: number;
   canonicalHostname: string;
   action: "render" | "redirect";
   redirectTo: string | null;
 }
 
 const ISOLATE_TTL_MS = 30_000;
+const UNCACHEABLE = /^\/(?:[a-z]{2}\/)?(?:cart|checkout|account|api|search)(?:\/|$)/;
 const ORIGIN_FALLBACK_KV_TTL_S = 300;
 const isolateCache = new Map<string, { value: RouteResolution | null; expires: number }>();
 
@@ -95,6 +97,24 @@ export default {
       return Response.redirect(`https://${host}${url.pathname}${url.search}`, 301);
     }
 
+    // Versioned HTML cache: the key includes the store content version, so a publish makes
+    // old entries unreachable without purging. Personal pages and previews are never cached.
+    const cookie = request.headers.get("cookie") ?? "";
+    const cacheable =
+      (request.method === "GET" || request.method === "HEAD") &&
+      !UNCACHEABLE.test(url.pathname) &&
+      !cookie.includes("altyapi_preview=") &&
+      !request.headers.has("authorization");
+    const cacheKey = new Request(`https://edge-cache.altyapi.internal/${host}${url.pathname}${url.search}${url.search ? "&" : "?"}__cv=${route.contentVersion}`, { method: "GET" });
+    if (cacheable) {
+      const hit = await caches.default.match(cacheKey);
+      if (hit) {
+        const res = new Response(hit.body, hit);
+        res.headers.set("x-altyapi-cache", "HIT");
+        return res;
+      }
+    }
+
     const upstreamUrl = new URL(url.pathname + url.search, env.STOREFRONT_ORIGIN);
     const headers = new Headers(request.headers);
     // Clients must never be able to inject routing metadata.
@@ -113,11 +133,21 @@ export default {
       await signEdgePayload(env.EDGE_ROUTING_SECRET, `${route.storeId}|${route.hostname}|${route.routingVersion}`),
     );
 
-    return fetch(upstreamUrl, {
+    const upstream = await fetch(upstreamUrl, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? null : request.body,
       redirect: "manual",
     });
+    const cdn = upstream.headers.get("cdn-cache-control");
+    const maxAge = cdn ? Number(/max-age=(\d+)/.exec(cdn)?.[1] ?? 0) : 0;
+    if (cacheable && upstream.status === 200 && maxAge > 0 && !upstream.headers.has("set-cookie")) {
+      const toCache = new Response(upstream.clone().body, upstream);
+      toCache.headers.set("cache-control", `public, max-age=${maxAge}`);
+      ctx.waitUntil(caches.default.put(cacheKey, toCache));
+    }
+    const res = new Response(upstream.body, upstream);
+    res.headers.set("x-altyapi-cache", cacheable ? "MISS" : "BYPASS");
+    return res;
   },
 } satisfies ExportedHandler<Env>;

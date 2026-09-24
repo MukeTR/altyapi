@@ -1,5 +1,5 @@
 import { deterministicId } from "@altyapi/commerce-core";
-import { dueDomainChecks, publishRouting, refreshDomainStatus } from "@altyapi/domains";
+import { dueDomainChecks, publishRouting, refreshDomainStatus, storeHostnames } from "@altyapi/domains";
 import { enqueueJob, PermanentJobError, type EventHandler, type JobHandler } from "@altyapi/events";
 import type { WorkerDeps } from "../deps";
 
@@ -18,6 +18,16 @@ export function domainJobHandlers(deps: WorkerDeps): JobHandler[] {
 
 export function domainEventHandlers(deps: WorkerDeps): EventHandler[] {
   return [
+    {
+      // Content changes bump stores.content_version; the edge cache key includes it. KV writes are
+      // coalesced per store (flushed by the scheduler) to respect KV per-key write limits.
+      name: "edge-content-version",
+      events: ["theme.published", "page.published", "product.created", "product.updated", "product.published", "campaign.activated"],
+      async handle(event) {
+        if (!deps.domains.cloudflare || !event.storeId) return;
+        await deps.redis.sadd("edge:content-pending", event.storeId);
+      },
+    },
     {
       name: "edge-routing-publisher",
       events: ["domain.routing_changed", "store.created"],
@@ -47,4 +57,15 @@ export async function scheduleDomainChecks(deps: WorkerDeps): Promise<number> {
     });
   }
   return ids.length;
+}
+
+/** Scheduler tick: publishes the latest content version for stores with pending changes. */
+export async function flushEdgeContentVersions(deps: WorkerDeps): Promise<number> {
+  const cf = deps.domains.cloudflare;
+  if (!cf) return 0;
+  const storeIds = await deps.redis.spop("edge:content-pending", 100);
+  for (const storeId of storeIds) {
+    await publishRouting(deps.db, cf, await storeHostnames(deps.db, storeId));
+  }
+  return storeIds.length;
 }

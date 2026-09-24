@@ -57,6 +57,13 @@
       "when": 1790248693018,
       "tag": "0007_import_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790250167653,
+      "tag": "0008_marketing_consent",
+      "breakpoints": true
     }
   ]
 }

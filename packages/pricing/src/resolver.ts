@@ -19,6 +19,8 @@ export interface PriceContext {
   customerGroupIds?: string[];
   /** Evaluation time for scheduled lists (defaults to now). */
   at?: Date;
+  /** Only the base (list) price, ignoring sale/segment lists — used by admin editing. */
+  baseOnly?: boolean;
 }
 
 export interface ResolvedPrice {
@@ -65,6 +67,7 @@ export async function applicableLists(tx: Transaction, ctx: PriceContext): Promi
   return lists
     .filter((l) => {
       if (l.kind === "base") return true;
+      if (ctx.baseOnly) return false;
       const ch = channelLinks.filter((c) => c.priceListId === l.id);
       if (ch.length && !(ctx.channelId && ch.some((c) => c.channelId === ctx.channelId))) return false;
       const gr = groupLinks.filter((g) => g.priceListId === l.id);

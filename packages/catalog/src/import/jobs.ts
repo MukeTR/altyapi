@@ -296,8 +296,9 @@ type ExistingProduct = Awaited<ReturnType<typeof getProductTx>>;
  * Overlays imported values on an existing product: variants are matched by SKU (then by
  * option values); unmatched imported variants are added; option values are merged.
  */
-function mergeIntoExisting(existing: ExistingProduct, built: BuiltProduct, locale: string, mapping: Partial<Record<ImportField, string>>): { input: ProductInput; stockUpdates: { variantIndex: number; quantity: number }[] } {
+function mergeIntoExisting(existing: ExistingProduct, built: BuiltProduct, locale: string): { input: ProductInput; stockUpdates: { variantIndex: number; quantity: number }[] } {
   const loc = locale;
+  const has = (f: ImportField) => built.provided.has(f);
   const existingOptionNames = existing.options.map((o) => (o.name[loc] ?? Object.values(o.name)[0] ?? "").toLocaleLowerCase("tr"));
   const importedOptionNames = built.input.options.map((o) => (o.name[loc] ?? "").toLocaleLowerCase("tr"));
   if (existing.options.length && importedOptionNames.length && existingOptionNames.join("|") !== importedOptionNames.join("|")) {
@@ -360,11 +361,11 @@ function mergeIntoExisting(existing: ExistingProduct, built: BuiltProduct, local
       const cur = variants[idx]!;
       variants[idx] = {
         ...cur,
-        price: mapping.price ? iv.price : cur.price,
-        compareAtPrice: mapping.compare_at_price ? iv.compareAtPrice ?? null : cur.compareAtPrice ?? null,
-        cost: mapping.cost && iv.cost != null ? iv.cost : cur.cost ?? null,
-        barcode: mapping.barcode ? iv.barcode ?? null : cur.barcode ?? null,
-        weightGrams: mapping.weight_grams && iv.weightGrams != null ? iv.weightGrams : cur.weightGrams ?? null,
+        price: has("price") ? iv.price : cur.price,
+        compareAtPrice: has("compare_at_price") ? iv.compareAtPrice ?? null : cur.compareAtPrice ?? null,
+        cost: has("cost") && iv.cost != null ? iv.cost : cur.cost ?? null,
+        barcode: has("barcode") && iv.barcode ? iv.barcode : cur.barcode ?? null,
+        weightGrams: has("weight_grams") && iv.weightGrams != null ? iv.weightGrams : cur.weightGrams ?? null,
       };
       if (qty !== undefined) stockUpdates.push({ variantIndex: idx, quantity: qty });
     } else {
@@ -379,25 +380,25 @@ function mergeIntoExisting(existing: ExistingProduct, built: BuiltProduct, local
       l,
       l === loc
         ? {
-            title: mapping.title ? imported.title : t.title,
+            title: has("title") ? imported.title : t.title,
             handle: t.handle,
-            descriptionHtml: mapping.description && imported.descriptionHtml ? imported.descriptionHtml : t.descriptionHtml,
-            seoTitle: mapping.seo_title ? imported.seoTitle ?? null : t.seoTitle,
-            seoDescription: mapping.seo_description ? imported.seoDescription ?? null : t.seoDescription,
+            descriptionHtml: has("description") ? imported.descriptionHtml : t.descriptionHtml,
+            seoTitle: has("seo_title") ? imported.seoTitle ?? null : t.seoTitle,
+            seoDescription: has("seo_description") ? imported.seoDescription ?? null : t.seoDescription,
           }
         : t,
     ]),
   );
   return {
     input: {
-      status: mapping.status ? built.input.status : existing.status,
+      status: has("status") ? built.input.status : existing.status,
       kind: existing.kind,
       translations,
-      vendorName: mapping.vendor ? built.input.vendorName ?? null : existing.vendor?.name ?? null,
-      productType: mapping.product_type ? built.input.productType ?? null : existing.productType,
+      vendorName: has("vendor") ? built.input.vendorName ?? null : existing.vendor?.name ?? null,
+      productType: has("product_type") ? built.input.productType ?? null : existing.productType,
       categoryId: existing.categoryId,
       taxClassId: existing.taxClassId,
-      tags: mapping.tags ? built.input.tags : existing.tags,
+      tags: has("tags") ? built.input.tags : existing.tags,
       collectionIds: [],
       options: finalOptions,
       variants,
@@ -478,9 +479,8 @@ export async function runImportChunk(deps: ImportRunDeps, scope: Scope, jobId: s
             if (existingId && !job.options.updateExisting) throw new AppError("conflict", "errors.import.already_exists");
             if (existingId) {
               const existing = await getProductTx(tx, ctx, existingId);
-              const merged = mergeIntoExisting(existing, product, locale, mapping);
-              if (product.input.categoryId && !mapping.category) merged.input.categoryId = existing.categoryId;
-              else if (product.input.categoryId) merged.input.categoryId = product.input.categoryId;
+              const merged = mergeIntoExisting(existing, product, locale);
+              if (product.input.categoryId) merged.input.categoryId = product.input.categoryId;
               await saveProductAggregate(tx, ctx, merged.input, existingId);
               const after = await getProductTx(tx, ctx, existingId);
               for (const s of merged.stockUpdates) {

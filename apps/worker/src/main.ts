@@ -3,7 +3,7 @@ import { sql } from "@altyapi/database";
 import { ConsumerRuntime } from "@altyapi/events";
 import { createWorkerDeps } from "./deps";
 import { consumeLoop, outboxLoop, schedulerLoop, type LoopControl } from "./loops";
-import { domainEventHandlers, domainJobHandlers, scheduleDomainChecks } from "./handlers/domains";
+import { domainEventHandlers, domainJobHandlers, flushEdgeContentVersions, scheduleDomainChecks } from "./handlers/domains";
 import { assetEventHandlers, runAssetCleanup } from "./handlers/assets";
 import { catalogEventHandlers, catalogJobHandlers, catalogScheduledTasks } from "./handlers/catalog";
 import { createR2Storage } from "@altyapi/storage";
@@ -32,6 +32,7 @@ const loops = [
     deps,
     [
       { name: "domains.schedule-checks", intervalMs: 30_000, run: () => scheduleDomainChecks(deps) },
+      { name: "edge.flush-content-versions", intervalMs: 5_000, run: () => flushEdgeContentVersions(deps) },
       { name: "assets.cleanup", intervalMs: 3600_000, run: () => runAssetCleanup(deps, r2) },
       { name: "storefront.scheduled-publishing", intervalMs: 30_000, run: () => runScheduledPublishing(deps.db) },
       ...catalogScheduledTasks(deps),

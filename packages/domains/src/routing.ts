@@ -11,6 +11,8 @@ export interface RouteResolution {
   storeStatus: string;
   defaultLocale: string;
   routingVersion: number;
+  /** Storefront content version; part of the edge HTML cache key (versioned invalidation). */
+  contentVersion: number;
   canonicalHostname: string;
   action: "render" | "redirect";
   redirectTo: string | null;
@@ -45,6 +47,7 @@ export async function resolveHostname(db: Database, rawHost: string): Promise<Ro
       storeStatus: row.store.status,
       defaultLocale: row.store.defaultLocale,
       routingVersion: row.store.routingVersion,
+      contentVersion: row.store.contentVersion,
       canonicalHostname,
       action: isCanonical ? "render" : "redirect",
       redirectTo: isCanonical ? null : canonicalHostname,
@@ -65,4 +68,12 @@ export async function publishRouting(db: Database, cf: CloudflareClient, hostnam
     if (resolution) await cf.putRoutingEntry(routingKvKey(hostname), JSON.stringify(resolution));
     else await cf.deleteRoutingEntry(routingKvKey(hostname));
   }
+}
+
+/** Hostnames of a store that currently route (for re-publishing after content changes). */
+export async function storeHostnames(db: Database, storeId: string): Promise<string[]> {
+  const rows = await withPlatformTx(db, (tx) =>
+    tx.select({ hostname: storeDomains.hostname }).from(storeDomains).where(and(eq(storeDomains.storeId, storeId), eq(storeDomains.status, "active"))),
+  );
+  return rows.map((r) => r.hostname);
 }

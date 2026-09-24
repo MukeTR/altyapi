@@ -611,7 +611,8 @@ export async function getProductTx(tx: Transaction, ctx: StoreContext, productId
     : [];
   const variantIds = variants.map((v) => v.id);
   const currency = ctx.store.defaultCurrency;
-  const prices = await resolvePrices(tx, { storeId: ctx.storeId, currency }, variantIds.map((variantId) => ({ variantId })));
+  // The editable price is the base list price; sale/segment lists are managed separately.
+  const prices = await resolvePrices(tx, { storeId: ctx.storeId, currency, baseOnly: true }, variantIds.map((variantId) => ({ variantId })));
   const costs = await latestCosts(tx, ctx.storeId, variantIds, currency);
   const stock = await getStockForVariants(tx, scopeOf(ctx), variantIds);
 
@@ -736,7 +737,7 @@ export async function listProducts(db: Database, ctx: StoreContext, q: z.infer<t
           .where(and(inArray(productMedia.productId, ids), eq(productMedia.position, 0)))
       : [];
     const stock = await getStockForVariants(tx, scopeOf(ctx), variantRows.map((v) => v.id));
-    const prices = await resolvePrices(tx, { storeId: ctx.storeId, currency: ctx.store.defaultCurrency }, variantRows.map((v) => ({ variantId: v.id })));
+    const prices = await resolvePrices(tx, { storeId: ctx.storeId, currency: ctx.store.defaultCurrency, baseOnly: true }, variantRows.map((v) => ({ variantId: v.id })));
     const last = page.at(-1);
     return {
       items: page.map((r) => {
