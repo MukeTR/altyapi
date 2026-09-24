@@ -7,6 +7,7 @@ import { MobileMenu } from "../client/mobile-menu";
 import { Popup } from "../client/popup";
 import { NewsletterForm } from "../client/newsletter-form";
 import { VisibilityGate } from "../client/visibility-gate";
+import { CartButton } from "../client/cart";
 import { assetKey } from "./content";
 
 function withGate(s: RenderSection, ctx: RenderCtx, node: React.ReactNode) {
@@ -64,7 +65,7 @@ function DesktopNav({ links }: { links: ResolvedLink[] }) {
   );
 }
 
-export function Header({ s, ctx, cartSlot }: { s: RenderSection; ctx: RenderCtx; cartSlot?: React.ReactNode }) {
+export function Header({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   const p = s.props as Record<string, unknown>;
   const links = ctx.site.menus[String(p.menuHandle ?? "main")] ?? [];
   const logoId = (p.logoAssetId as string | null) ?? ctx.site.theme.settings.brand.logoAssetId;
@@ -100,7 +101,7 @@ export function Header({ s, ctx, cartSlot }: { s: RenderSection; ctx: RenderCtx;
               ))}
             </nav>
           )}
-          {cartSlot}
+          <CartButton label={t(ctx.locale, "cart")} locale={ctx.locale} />
         </div>
       </div>
       {p.layout === "logo-center" && (

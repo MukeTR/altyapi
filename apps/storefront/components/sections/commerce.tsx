@@ -7,6 +7,7 @@ import { L, P, type RenderCtx } from "../context";
 import { ProductCard, ProductGridList } from "../ui/product-card";
 import { JsonLd } from "../ui/json-ld";
 import { ProductPurchase } from "../client/product-purchase";
+import { CartPage } from "../client/cart";
 import { SectionShell } from "./shell";
 
 export function ProductGrid({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
@@ -320,3 +321,11 @@ export function NotFoundMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
   );
 }
 
+
+export function CartMain({ s, ctx }: { s: RenderSection; ctx: RenderCtx }) {
+  return (
+    <SectionShell s={s} ctx={ctx}>
+      <CartPage locale={ctx.locale} mediaBase={ctx.mediaBase} />
+    </SectionShell>
+  );
+}

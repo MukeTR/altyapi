@@ -2,6 +2,7 @@
 
 import type { ProductDetailDto } from "@altyapi/catalog";
 import { ProductOptions } from "./product-options";
+import { AddToCart } from "./cart";
 
 /** Variant selection and purchase controls for the product page. */
 export function ProductPurchase({
@@ -18,5 +19,9 @@ export function ProductPurchase({
   currency: string;
   labels: { soldOut: string; lowStock: string; addToCart: string };
 }) {
-  return <ProductOptions product={product} initialVariantId={initialVariantId} picker={picker} locale={locale} labels={labels} />;
+  return (
+    <ProductOptions product={product} initialVariantId={initialVariantId} picker={picker} locale={locale} labels={labels}>
+      {(variant) => <AddToCart variantId={variant?.id ?? null} available={Boolean(variant?.available)} label={labels.addToCart} soldOutLabel={labels.soldOut} />}
+    </ProductOptions>
+  );
 }

@@ -4,6 +4,7 @@ import { fontHref, getSite, renderCtx } from "@/lib/site";
 import { t } from "@/lib/i18n";
 import { mediaUrl } from "@/lib/media";
 import { Sections } from "@/components/sections/render";
+import { CartDrawer, CartProvider } from "@/components/client/cart";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -47,12 +48,23 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <p className="mt-4 text-muted-fg">{t(site.locale, "storeClosed")}</p>
           </main>
         ) : (
-          <>
+          <CartProvider>
             <Sections sections={before} ctx={ctx} />
             <main id="main">{children}</main>
             <Sections sections={after} ctx={ctx} />
             <Sections sections={overlays} ctx={ctx} />
-          </>
+            <CartDrawer
+              locale={site.locale}
+              mediaBase={site.mediaBaseUrl}
+              labels={{
+                cart: t(site.locale, "cart"),
+                close: t(site.locale, "close"),
+                checkout: site.locale === "en" ? "Checkout" : "Ödemeye geç",
+                viewCart: site.locale === "en" ? "View cart" : "Sepete git",
+                empty: site.locale === "en" ? "Your cart is empty." : "Sepetiniz boş.",
+              }}
+            />
+          </CartProvider>
         )}
       </body>
     </html>

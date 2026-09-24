@@ -1,7 +1,7 @@
 import type { RenderSection } from "@altyapi/theme-engine";
 import type { RenderCtx } from "../context";
 import { CountdownSection, Faq, Hero, ImageBanner, ImageWithText, LogoCloud, Newsletter, RichText, SliderSection, Testimonials, Video } from "./content";
-import { CategoryCards, CollectionMain, FeaturedCollection, NotFoundMain, ProductGrid, ProductMain, SearchMain } from "./commerce";
+import { CartMain, CategoryCards, CollectionMain, FeaturedCollection, NotFoundMain, ProductGrid, ProductMain, SearchMain } from "./commerce";
 import { AnnouncementBarSection, Footer, Header, PopupSection } from "./layout";
 
 type Renderer = (props: { s: RenderSection; ctx: RenderCtx; index: number }) => React.ReactNode;
@@ -29,6 +29,7 @@ const RENDERERS: Record<string, Renderer> = {
   "builtin:product-main@1": ProductMain,
   "builtin:collection-main@1": CollectionMain,
   "builtin:search-main@1": SearchMain,
+  "builtin:cart-main@1": CartMain,
   "builtin:not-found-main@1": NotFoundMain,
 };
 
