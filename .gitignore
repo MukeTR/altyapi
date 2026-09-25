@@ -13,3 +13,4 @@ coverage/
 .terraform/
 *.tfstate
 *.tfstate.*
+dump.rdb
