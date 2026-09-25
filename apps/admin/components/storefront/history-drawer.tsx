@@ -38,6 +38,7 @@ export function HistoryDrawer({
   onOpenChange,
   resource,
   resourceId,
+  endpoint,
   title,
   canRestore,
   beforeRestore,
@@ -47,6 +48,8 @@ export function HistoryDrawer({
   onOpenChange: (open: boolean) => void;
   resource: HistoryResource;
   resourceId: string;
+  /** API path of the history when it is not the storefront one (content entries: …/content/entries/:id/history). */
+  endpoint?: string;
   title: string;
   canRestore: boolean;
   /** Saves pending edits first; resolve false to cancel. */
@@ -60,15 +63,16 @@ export function HistoryDrawer({
   const [state, setState] = useState<{ status: "loading" } | { status: "ready"; data: HistoryList } | { status: "error"; error: ApiErrorInfo }>({ status: "loading" });
   const [busy, setBusy] = useState<number | null>(null);
 
+  const historyPath = endpoint ?? `${apiBase}/storefront/history/${resource}/${resourceId}`;
   const load = useCallback(async () => {
     setState({ status: "loading" });
     try {
-      setState({ status: "ready", data: await bff<HistoryList>(`${apiBase}/storefront/history/${resource}/${resourceId}`) });
+      setState({ status: "ready", data: await bff<HistoryList>(historyPath) });
     } catch (err) {
       if (err instanceof ApiError) setState({ status: "error", error: err.toInfo() });
       else throw err;
     }
-  }, [apiBase, resource, resourceId]);
+  }, [historyPath]);
 
   useEffect(() => {
     if (open) void load();
@@ -79,8 +83,8 @@ export function HistoryDrawer({
     setBusy(revision);
     try {
       if (beforeRestore && !(await beforeRestore())) return;
-      const current = await bff<HistoryList>(`${apiBase}/storefront/history/${resource}/${resourceId}`);
-      const result = await bff<HistoryMoveResult>(`${apiBase}/storefront/history/${resource}/${resourceId}/restore`, {
+      const current = await bff<HistoryList>(historyPath);
+      const result = await bff<HistoryMoveResult>(`${historyPath}/restore`, {
         method: "POST",
         body: { revision, expectedRevision: current.currentRevision },
       });

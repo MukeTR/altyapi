@@ -130,6 +130,10 @@ export function linkComplete(link: NavLink): boolean {
       return Boolean(link.collectionId);
     case "product":
       return Boolean(link.productId);
+    case "entry":
+      return Boolean(link.entryId);
+    case "entry_index":
+      return Boolean(link.typeId);
     default:
       return true;
   }

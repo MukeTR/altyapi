@@ -32,11 +32,13 @@ import integrations from "./integrations";
 import ekosistem from "./ekosistem";
 import karmatik from "./karmatik";
 import yanit from "./yanit";
+import content from "./content";
+import site from "./site";
 
 /**
  * Turkish interface text: the source catalog. Every namespace lives in its own file; a feature
  * adds `<feature>.ts` here and in ../en (typed against this one) and registers it below.
  */
-export const tr = { common, auth, onboarding, nav, shell, states, ui, statuses, roles, overview, commerce, orders, products, collections, inventory, imports, pricelists, categories, dashboard, storefront, editor, sections, domains, media, richText, settings, team, payments, brand, tracking, integrations, ekosistem, karmatik, yanit };
+export const tr = { common, auth, onboarding, nav, shell, states, ui, statuses, roles, overview, commerce, orders, products, collections, inventory, imports, pricelists, categories, dashboard, storefront, editor, sections, domains, media, richText, settings, team, payments, brand, tracking, integrations, ekosistem, karmatik, yanit, content, site };
 
 export type Messages = typeof tr;

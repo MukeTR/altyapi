@@ -58,9 +58,10 @@ export async function createStoreAction(_prev: CreateStoreState, formData: FormD
     timezone: text(formData, "timezone"),
     countryCode: text(formData, "countryCode").toUpperCase(),
     contactEmail: text(formData, "contactEmail"),
+    siteKind: text(formData, "siteKind"),
   };
   const body: Record<string, string> = { name: values.name };
-  for (const key of ["slug", "defaultLocale", "defaultCurrency", "timezone", "countryCode", "contactEmail"] as const) {
+  for (const key of ["slug", "defaultLocale", "defaultCurrency", "timezone", "countryCode", "contactEmail", "siteKind"] as const) {
     if (values[key]) body[key] = values[key];
   }
   let store: Store;

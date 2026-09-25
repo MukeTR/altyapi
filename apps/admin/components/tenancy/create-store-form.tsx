@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { Select } from "@/components/ui/select";
 import type { OrganizationSummary } from "@/lib/api/types";
 import { countryOptions, currencyOptions, timeZoneOptions } from "@/lib/intl-options";
 import { LOCALE_REGISTRY, localeLabel } from "@/lib/locales";
+import { SITE_KINDS } from "@/lib/site/types";
 import { slugify } from "@/lib/slug";
 
 const INITIAL: CreateStoreState = { error: null, values: {} };
@@ -68,6 +70,18 @@ export function CreateStoreForm({ organization, rootDomain, onCancel }: CreateSt
       >
         <Input name="slug" maxLength={63} autoCapitalize="none" spellCheck={false} placeholder={slugify(name) || undefined} value={slug} onChange={(e) => setSlug(e.target.value)} suffix={`.${rootDomain}`} className="font-mono" />
       </Field>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-base font-medium text-fg">{t("onboarding.store.siteKind")}</legend>
+        <p className="-mt-1 text-sm text-fg-muted">{t("onboarding.store.siteKindHint")}</p>
+        <RadioGroup
+          name="siteKind"
+          idPrefix="site-kind"
+          aria-label={t("onboarding.store.siteKind")}
+          defaultValue={state.values.siteKind || "ecommerce"}
+          options={SITE_KINDS.map((k) => ({ value: k, label: t(`site.kinds.${k}`), description: t(`site.kindHints.${k}`) }))}
+        />
+        {error?.fields.siteKind ? <p className="text-sm text-danger">{error.fields.siteKind}</p> : null}
+      </fieldset>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t("onboarding.store.defaultLocale")} description={t("onboarding.store.defaultLocaleHint")} error={error?.fields.defaultLocale ?? null}>
           <Select name="defaultLocale" defaultValue={state.values.defaultLocale || "tr"} options={localeOptions} />

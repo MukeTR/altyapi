@@ -122,6 +122,10 @@ const statuses = {
   member: { active: "Aktif", invited: "Davet edildi", suspended: "Askıya alındı" },
   transfer: { draft: "Taslak", in_transit: "Yolda", received: "Teslim alındı", cancelled: "İptal edildi" },
   delivery: { sent: "Gönderildi", failed: "Başarısız", skipped: "Atlandı" },
+  contentEntry: { draft: "Taslak", scheduled: "Zamanlandı", published: "Yayında", archived: "Arşivlendi" },
+  contentType: { active: "Etkin", archived: "Arşivlendi" },
+  siteModule: { enabled: "Açık", disabled: "Kapalı", locked_on: "Kilitli: açık", locked_off: "Kilitli: kapalı" },
+  siteLocation: { active: "Yayında", hidden: "Gizli" },
 };
 
 export default statuses;

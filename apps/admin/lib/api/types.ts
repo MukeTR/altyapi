@@ -39,6 +39,8 @@ export interface Store {
   countryCode: string;
   routingVersion: number;
   contentVersion: number;
+  /** Active capability modules (core included); screens of an inactive module are hidden. */
+  modules?: string[];
 }
 
 export interface RoleGrant {

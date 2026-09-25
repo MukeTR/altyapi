@@ -33,6 +33,8 @@ import integrations from "./integrations";
 import ekosistem from "./ekosistem";
 import karmatik from "./karmatik";
 import yanit from "./yanit";
+import content from "./content";
+import site from "./site";
 
 /** English interface text; each namespace is typed against its Turkish source. */
-export const en: Messages = { common, auth, onboarding, nav, shell, states, ui, statuses, roles, overview, commerce, orders, products, collections, inventory, imports, pricelists, categories, dashboard, storefront, editor, sections, domains, media, richText, settings, team, payments, brand, tracking, integrations, ekosistem, karmatik, yanit };
+export const en: Messages = { common, auth, onboarding, nav, shell, states, ui, statuses, roles, overview, commerce, orders, products, collections, inventory, imports, pricelists, categories, dashboard, storefront, editor, sections, domains, media, richText, settings, team, payments, brand, tracking, integrations, ekosistem, karmatik, yanit, content, site };

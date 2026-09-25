@@ -20,6 +20,8 @@ const onboarding: typeof trOnboarding = {
     created: "{name} created.",
   },
   store: {
+    siteKind: "Site kind",
+    siteKindHint: "Sets the starting modules and pages; you can change modules later under Site › Modules.",
     title: "Store",
     description: "Creating a store also prepares its storefront, default location, price list and tax class.",
     name: "Store name",

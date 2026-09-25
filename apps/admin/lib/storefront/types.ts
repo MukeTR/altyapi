@@ -177,6 +177,10 @@ export type NavLink =
   | { type: "page"; pageId: string }
   | { type: "collection"; collectionId: string }
   | { type: "product"; productId: string }
+  /** A content entry: shown with its live path in each language, hidden while it is not live. */
+  | { type: "entry"; entryId: string }
+  /** A content type's index route (/blog, /hizmetler); hidden while the type has none. */
+  | { type: "entry_index"; typeId: string }
   | { type: "home" | "search" | "cart" };
 
 export interface NavItem {
@@ -206,7 +210,7 @@ export interface Redirect {
   updatedAt?: string;
 }
 
-export type HistoryResource = "theme" | "page" | "navigation";
+export type HistoryResource = "theme" | "page" | "navigation" | "entry";
 
 export interface HistoryItem {
   revision: number;

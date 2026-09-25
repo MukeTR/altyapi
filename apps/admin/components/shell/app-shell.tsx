@@ -37,8 +37,9 @@ export function AppShell({ initialCollapsed, rootDomain, children }: AppShellPro
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const preview = usePreviewLink();
 
-  const main = useMemo(() => resolveNav(NAV_MAIN, ctx.permissions, ctx.basePath), [ctx.permissions, ctx.basePath]);
-  const bottom = useMemo(() => resolveNav(NAV_BOTTOM, ctx.permissions, ctx.basePath), [ctx.permissions, ctx.basePath]);
+  const modules = ctx.store.modules;
+  const main = useMemo(() => resolveNav(NAV_MAIN, ctx.permissions, ctx.basePath, modules), [ctx.permissions, ctx.basePath, modules]);
+  const bottom = useMemo(() => resolveNav(NAV_BOTTOM, ctx.permissions, ctx.basePath, modules), [ctx.permissions, ctx.basePath, modules]);
   const all = useMemo(() => [...main, ...bottom], [main, bottom]);
   const current = activeHref(pathname, all, ctx.basePath);
   const settingsHref = bottom.find((i) => i.id === "settings")?.children.find((c) => c.id === "settings.general")?.href ?? null;

@@ -1,6 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Blocks,
+  Building2,
+  FileText,
   LayoutDashboard,
   Megaphone,
   Package,
@@ -20,8 +22,8 @@ import { hasAnyPermission, type Permission } from "@/lib/permissions";
  *
  * An entry is shown only when (a) `ready` is true, meaning its screen exists under
  * app/o/[org]/[store]/(shell)/<path>, and (b) the user holds one of `anyOf` for the current
- * store. Areas whose backend does not exist yet (customers, content, campaigns, analytics,
- * AI actions) have no entry at all. A feature stage that ships a screen sets `ready: true` on
+ * store. Areas whose backend does not exist yet (customers, campaigns, analytics, AI
+ * actions) have no entry at all. A feature stage that ships a screen sets `ready: true` on
  * its entry; nothing else in the shell needs to change.
  */
 export interface NavLeaf {
@@ -35,6 +37,8 @@ export interface NavLeaf {
   ready: boolean;
   /** Extra search terms for the command palette (both UI languages). */
   keywords?: readonly string[];
+  /** Capability module the screen belongs to (packages/site); hidden while it is not active. */
+  module?: string;
 }
 
 export interface NavItem extends NavLeaf {
@@ -56,7 +60,7 @@ const leaf = (id: string, label: MessageKey, path: string, anyOf: readonly Permi
 
 export const NAV_MAIN: readonly NavItem[] = [
   { id: "overview", label: "nav.overview", icon: LayoutDashboard, path: "", anyOf: ["store:read"], ready: true, goKey: "h", keywords: ["dashboard", "home", "ana sayfa"] },
-  { id: "orders", label: "nav.orders", icon: Receipt, path: "/orders", anyOf: ["orders:read"], ready: true, goKey: "o", keywords: ["order", "sipariş"] },
+  { id: "orders", label: "nav.orders", icon: Receipt, path: "/orders", anyOf: ["orders:read"], ready: true, goKey: "o", module: "commerce", keywords: ["order", "sipariş"] },
   {
     id: "products",
     label: "nav.products",
@@ -65,6 +69,7 @@ export const NAV_MAIN: readonly NavItem[] = [
     anyOf: ["catalog:read", "pricing:read"],
     ready: false,
     goKey: "p",
+    module: "catalog",
     children: [
       leaf("products.all", "nav.productsAll", "/products", ["catalog:read"], true, ["product", "ürün", "katalog"]),
       leaf("products.collections", "nav.collections", "/products/collections", ["catalog:read"], true, ["collection"]),
@@ -81,6 +86,7 @@ export const NAV_MAIN: readonly NavItem[] = [
     anyOf: ["inventory:read"],
     ready: false,
     goKey: "i",
+    module: "catalog",
     children: [
       leaf("inventory.levels", "nav.inventoryLevels", "/inventory", ["inventory:read"], true, ["stock", "stok"]),
       leaf("inventory.locations", "nav.locations", "/inventory/locations", ["inventory:read"], true, ["warehouse", "depo"]),
@@ -101,6 +107,31 @@ export const NAV_MAIN: readonly NavItem[] = [
       leaf("storefront.redirects", "nav.redirects", "/storefront/redirects", ["storefront:read"], true, ["redirect", "301"]),
       leaf("storefront.publications", "nav.publications", "/storefront/publications", ["storefront:read"], true, ["publish", "yayın", "rollback"]),
       leaf("storefront.media", "nav.media", "/storefront/media", ["media:read"], true, ["image", "görsel", "asset"]),
+    ],
+  },
+  {
+    id: "content",
+    label: "nav.content",
+    icon: FileText,
+    path: "/content",
+    anyOf: ["content:read"],
+    ready: true,
+    goKey: "c",
+    module: "content",
+    keywords: ["content", "içerik", "blog", "post", "yazı", "hizmet", "service", "sss", "faq", "cms"],
+  },
+  {
+    id: "site",
+    label: "nav.site",
+    icon: Building2,
+    path: "/site",
+    anyOf: ["site:read"],
+    ready: false,
+    children: [
+      leaf("site.profile", "nav.siteProfile", "/site", ["site:read"], true, ["site", "profile", "profil", "verification", "doğrulama", "robots"]),
+      leaf("site.identity", "nav.identity", "/site/identity", ["site:read"], true, ["künye", "identity", "vkn", "mersis", "kep", "vergi"]),
+      leaf("site.locations", "nav.siteLocations", "/site/locations", ["site:read"], true, ["location", "şube", "adres", "çalışma saatleri", "opening hours"]),
+      leaf("site.modules", "nav.modules", "/site/modules", ["site:read"], true, ["module", "modül", "catalog", "commerce"]),
     ],
   },
   {
@@ -192,16 +223,21 @@ export interface VisibleNavItem {
   children: { id: string; label: MessageKey; href: string; keywords: readonly string[] }[];
 }
 
-function visibleLeaf(item: NavLeaf, permissions: readonly string[]): boolean {
-  return item.ready && hasAnyPermission(permissions, item.anyOf);
+/** A module requirement is met when the module is active (an unknown module list shows everything). */
+function moduleActive(item: NavLeaf, modules: readonly string[] | undefined): boolean {
+  return !item.module || !modules || modules.includes(item.module);
 }
 
-export function resolveNav(items: readonly NavItem[], permissions: readonly string[], basePath: string): VisibleNavItem[] {
+function visibleLeaf(item: NavLeaf, permissions: readonly string[], modules: readonly string[] | undefined): boolean {
+  return item.ready && hasAnyPermission(permissions, item.anyOf) && moduleActive(item, modules);
+}
+
+export function resolveNav(items: readonly NavItem[], permissions: readonly string[], basePath: string, modules?: readonly string[]): VisibleNavItem[] {
   const out: VisibleNavItem[] = [];
   for (const item of items) {
-    if (!hasAnyPermission(permissions, item.anyOf)) continue;
+    if (!hasAnyPermission(permissions, item.anyOf) || !moduleActive(item, modules)) continue;
     const children = (item.children ?? [])
-      .filter((c) => visibleLeaf(c, permissions))
+      .filter((c) => visibleLeaf(c, permissions, modules))
       .map((c) => ({ id: c.id, label: c.label, href: `${basePath}${c.path}`, keywords: c.keywords ?? [] }));
     if (item.children) {
       const first = children[0];

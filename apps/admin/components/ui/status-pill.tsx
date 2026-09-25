@@ -44,6 +44,10 @@ const STATUS_TONES: { [D in StatusDomain]?: Record<string, Tone> } = {
   member: { active: "success", invited: "info" },
   transfer: { in_transit: "info", received: "success" },
   delivery: { sent: "success", failed: "danger" },
+  contentEntry: { published: "success", scheduled: "info", draft: "neutral", archived: "neutral" },
+  contentType: { active: "success", archived: "neutral" },
+  siteModule: { enabled: "success", locked_on: "accent", disabled: "neutral", locked_off: "warning" },
+  siteLocation: { active: "success", hidden: "neutral" },
 };
 
 export function statusTone(domain: StatusDomain, value: string): Tone {

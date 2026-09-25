@@ -47,6 +47,11 @@ import { HistoryDrawer } from "../history-drawer";
 import { PublishDialog } from "../publish-dialogs";
 import { NavLinkField, useLinkSummary } from "./nav-link-field";
 
+/** Entry ids linked anywhere in the menu (their titles are shown in the tree). */
+function collectEntryIds(items: readonly NavItem[]): string[] {
+  return items.flatMap((i) => [...(i.link.type === "entry" && i.link.entryId ? [i.link.entryId] : []), ...collectEntryIds(i.children ?? [])]);
+}
+
 interface TreeProps {
   items: NavItem[];
   parent: string | null;
@@ -173,12 +178,13 @@ export function MenuEditor({ menu, pages, usage }: { menu: NavigationMenu; pages
   const [collectionsError, setCollectionsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!can("catalog:read")) return;
+    // Collections exist only with the catalog module (and catalog:read).
+    if (!can("catalog:read") || (store.modules && !store.modules.includes("catalog"))) return;
     bff<{ items: CollectionSummary[] }>(`${apiBase}/collections`).then(
       (r) => setCollections(r.items),
       (err) => setCollectionsError(err instanceof ApiError ? describeError(err.toInfo()).message : t("states.networkBody")),
     );
-  }, [apiBase, can, describeError, t]);
+  }, [apiBase, can, describeError, t, store.modules]);
 
   const dirty = name !== saved.name || JSON.stringify(items) !== JSON.stringify(saved.items);
   useEffect(() => {
@@ -189,7 +195,8 @@ export function MenuEditor({ menu, pages, usage }: { menu: NavigationMenu; pages
   }, [dirty]);
 
   const invalid = useMemo(() => new Set(invalidItems(items, store.defaultLocale)), [items, store.defaultLocale]);
-  const summaryOf = useLinkSummary(pages, collections);
+  const entryIds = useMemo(() => collectEntryIds(items), [items]);
+  const summaryOf = useLinkSummary(pages, collections, entryIds);
   const labelOf = (item: NavItem) => item.label[store.defaultLocale] || Object.values(item.label).find(Boolean) || t("storefront.menus.untitled");
   const current = selected ? findItem(items, selected) : undefined;
 

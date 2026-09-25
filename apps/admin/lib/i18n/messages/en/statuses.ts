@@ -123,6 +123,10 @@ const statuses: typeof trStatuses = {
   member: { active: "Active", invited: "Invited", suspended: "Suspended" },
   transfer: { draft: "Draft", in_transit: "In transit", received: "Received", cancelled: "Cancelled" },
   delivery: { sent: "Sent", failed: "Failed", skipped: "Skipped" },
+  contentEntry: { draft: "Draft", scheduled: "Scheduled", published: "Published", archived: "Archived" },
+  contentType: { active: "Active", archived: "Archived" },
+  siteModule: { enabled: "On", disabled: "Off", locked_on: "Locked on", locked_off: "Locked off" },
+  siteLocation: { active: "Shown", hidden: "Hidden" },
 };
 
 export default statuses;

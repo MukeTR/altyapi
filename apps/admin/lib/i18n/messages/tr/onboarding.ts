@@ -18,6 +18,8 @@ const onboarding = {
     created: "{name} oluşturuldu.",
   },
   store: {
+    siteKind: "Site türü",
+    siteKindHint: "Başlangıç modülleri ve sayfalar buna göre hazırlanır; modülleri sonra Site › Modüller’den değiştirebilirsiniz.",
     title: "Mağaza",
     description: "Mağaza oluşturulduğunda vitrin, varsayılan depo, fiyat listesi ve vergi sınıfı hazırlanır.",
     name: "Mağaza adı",
