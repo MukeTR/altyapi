@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Design tokens. Colors are CSS variables mapped through `@theme inline`, so dark mode is a
+ * variable swap on <html data-theme>. Contrast ratios in the comments are WCAG 2.x values
+ * against the surface named; every text pair meets AA and every control outline ≥3:1.
+ */
+:root {
+  color-scheme: light;
+  /* Neutrals */
+  --canvas: #f7f7f8; /* app background */
+  --surface: #ffffff; /* cards, tables, inputs, top bar */
+  --surface-muted: #f4f4f5; /* table header, hover row, code blocks */
+  --surface-sunken: #efeff1; /* editor canvas backdrop */
+  --border: #e4e4e7; /* dividers, card outlines (decorative) */
+  --border-control: #8a8a93; /* input/checkbox/switch/select outlines: 3.42:1 on white */
+  --fg: #18181b; /* 17.7:1 on white */
+  --fg-muted: #52525b; /* 7.7:1 */
+  --fg-subtle: #6b6b75; /* 5.3:1 white, ≥4.59 on every light surface */
+  /* Single accent (indigo) */
+  --accent: #4f46e5; /* white on it 6.29:1 */
+  --accent-hover: #4338ca;
+  --accent-fg: #ffffff;
+  --accent-subtle: #eef2ff;
+  --accent-subtle-fg: #4338ca; /* 7.07:1 on accent-subtle */
+  --link: #4338ca; /* 7.9:1 on white */
+  --focus: #4f46e5; /* 5.87:1 on canvas */
+  /* Semantic: *-fg on *-bg (pills, callouts), *-solid for filled buttons with white text */
+  --success-fg: #166534;
+  --success-bg: #dcfce7;
+  --success-solid: #15803d;
+  --warning-fg: #92400e;
+  --warning-bg: #fef3c7;
+  --warning-solid: #b45309;
+  --danger-fg: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-solid: #b91c1c;
+  --danger-solid-hover: #991b1b;
+  --info-fg: #1d4ed8;
+  --info-bg: #eff6ff;
+  --info-solid: #1d4ed8;
+  --overlay: rgb(9 9 11 / 0.45);
+  --shadow-rgb: 24 24 27;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #111113;
+  --surface: #18181b;
+  --surface-muted: #1f1f23;
+  --surface-sunken: #0c0c0e;
+  --border: #2e2e33;
+  --border-control: #76767f; /* 3.94 on surface, 3.65 on surface-muted */
+  --fg: #fafafa; /* 18.1 */
+  --fg-muted: #a1a1aa; /* 6.9 / 6.4 */
+  --fg-subtle: #8e8e98; /* 5.5 / 5.1 */
+  --accent: #4f46e5; /* white text 6.29 (a lighter indigo fails AA with white) */
+  --accent-hover: #4338ca;
+  --accent-fg: #ffffff;
+  --accent-subtle: #1e1b4b;
+  --accent-subtle-fg: #c7d2fe; /* 10.7 */
+  --link: #a5b4fc; /* 9.5 */
+  --focus: #818cf8; /* 5.9 on surface */
+  --success-fg: #4ade80;
+  --success-bg: #052e16;
+  --warning-fg: #fbbf24;
+  --warning-bg: #3b2106;
+  --danger-fg: #f87171;
+  --danger-bg: #3a0d0d;
+  --info-fg: #60a5fa;
+  --info-bg: #0b1f3a;
+  --overlay: rgb(0 0 0 / 0.6);
+  --shadow-rgb: 0 0 0;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-border-control: var(--border-control);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-subtle-fg: var(--accent-subtle-fg);
+  --color-link: var(--link);
+  --color-focus: var(--focus);
+  --color-success: var(--success-fg);
+  --color-success-bg: var(--success-bg);
+  --color-success-solid: var(--success-solid);
+  --color-warning: var(--warning-fg);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-solid: var(--warning-solid);
+  --color-danger: var(--danger-fg);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-info: var(--info-fg);
+  --color-info-bg: var(--info-bg);
+  --color-info-solid: var(--info-solid);
+  --color-overlay: var(--overlay);
+}
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* Type scale: size / line-height */
+  --text-xs: 0.75rem; /* 12/16 meta, badges, table header */
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem; /* 13/20 secondary, dense cells */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem; /* 14/20 body default */
+  --text-base--line-height: 1.25rem;
+  --text-md: 1rem; /* 16/24 card titles, dialog titles */
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.125rem; /* 18/28 section headings */
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem; /* 20/28 page H1 */
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem; /* 24/32 Stat values */
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem; /* 30/36 auth hero only */
+  --text-3xl--line-height: 2.25rem;
+  /* Radii */
+  --radius-sm: 4px; /* badges, kbd, checkbox */
+  --radius-md: 6px; /* buttons, inputs, menu items */
+  --radius-lg: 8px; /* cards, popovers, tables */
+  --radius-xl: 12px; /* dialogs, drawers */
+  /* Shadows: surfaces are separated by borders; shadows are for floating layers only. */
+  --shadow-xs: 0 1px 0 rgb(var(--shadow-rgb) / 0.04);
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-rgb) / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(var(--shadow-rgb) / 0.12), 0 2px 4px rgb(var(--shadow-rgb) / 0.06);
+  --shadow-lg: 0 16px 40px -8px rgb(var(--shadow-rgb) / 0.24), 0 4px 8px rgb(var(--shadow-rgb) / 0.08);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Motion for floating layers (Radix sets data-state=open|closed). */
+  --animate-fade-in: fade-in 140ms var(--ease-out);
+  --animate-fade-out: fade-out 120ms ease-in;
+  --animate-pop-in: pop-in 160ms var(--ease-out);
+  --animate-pop-out: pop-out 120ms ease-in;
+  --animate-sheet-in-left: sheet-in-left 160ms var(--ease-out);
+  --animate-sheet-in-right: sheet-in-right 160ms var(--ease-out);
+  --animate-toast-in: toast-in 160ms var(--ease-out);
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  --animate-spin-slow: spin 0.8s linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(2px) scale(0.98);
+    }
+  }
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes sheet-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+  @keyframes sheet-in-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes shimmer {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background: var(--canvas);
+    color: var(--fg);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+  }
+  h1 {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl--line-height);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  /* Links in text are underlined so they are not identified by color alone (WCAG 1.4.1). */
+  a {
+    color: var(--link);
+    text-decoration-line: underline;
+    text-decoration-thickness: from-font;
+    text-underline-offset: 0.15em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  ::placeholder {
+    color: var(--fg-subtle);
+    opacity: 1;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}

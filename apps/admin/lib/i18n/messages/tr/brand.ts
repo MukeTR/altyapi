@@ -1,0 +1,32 @@
+/** Settings › Brand profile (shared with linked Kârmatik and Yanıt accounts). */
+const brand = {
+  title: "Marka profili",
+  meta: "Markanızı tanımlayan bilgiler.",
+  updated: "Son güncelleme",
+  sharedNote: "Bu bilgiler, marka okuma izni verdiğiniz bağlı Kârmatik ve Yanıt hesaplarıyla paylaşılır. Yanıt görünürlük ölçümünde konuları ve rakipleri kullanır.",
+  saved: "Marka profili kaydedildi",
+  sectionTitle: "Marka",
+  sectionDescription: "Yalnızca düz metin kabul edilir; bağlantılar https ile başlamalıdır.",
+  description: "Açıklama",
+  descriptionHelp: "Markanızı birkaç cümleyle anlatın (en fazla 4.000 karakter).",
+  topics: "Konular",
+  topicsHelp: "Markanızın bilinmek istediği konular. Enter veya virgülle ekleyin (en fazla 30).",
+  topicsPlaceholder: "örn. organik pamuk",
+  social: "Sosyal medya profilleri",
+  socialN: "{n}. sosyal medya profili",
+  socialHelp: "Tam adres girin (https://…). En fazla 15.",
+  competitorsTitle: "Rakipler",
+  competitorsDescription: "Görünürlük karşılaştırmasında kullanılacak rakip markalar (en fazla 30).",
+  noCompetitors: "Henüz rakip eklenmedi.",
+  competitorN: "{n}. rakip",
+  competitorWebsiteN: "{n}. rakibin web sitesi",
+  competitorName: "Marka adı",
+  competitorWebsite: "Web sitesi",
+  aliases: "Diğer adları",
+  aliasesHelp: "Markanın yazılış farkları veya kısaltmaları (en fazla 10).",
+  httpsRequired: "https:// ile başlayan geçerli bir adres girin.",
+  addCompetitor: "Rakip ekle",
+  removeCompetitor: "{n}. rakibi kaldır",
+};
+
+export default brand;
