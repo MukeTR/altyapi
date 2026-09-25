@@ -160,7 +160,17 @@ export function parseEnv<S extends z.ZodType>(
   return result.data;
 }
 
+/**
+ * Reverse proxies (load balancer, CDN) in front of the API. req.ip is read this many hops
+ * from the socket; X-Forwarded-For entries further left are client-controlled and ignored,
+ * so rate limits and audit IPs cannot be spoofed by sending the header directly.
+ */
+export const apiProxySchema = z.object({
+  API_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
+});
+
 export const apiEnvSchema = runtimeSchema
+  .extend(apiProxySchema.shape)
   .extend(appUrlsSchema.shape)
   .extend(postgresSchema.shape)
   .extend(redisSchema.shape)

@@ -45,7 +45,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     loggerInstance: deps.logger as FastifyBaseLogger,
     genReqId: () => newId(),
-    trustProxy: true,
+    // A hop count, never `true`: only addresses appended by our own proxies are trusted.
+    trustProxy: (_address: string, hop: number) => hop < deps.env.API_TRUSTED_PROXY_HOPS,
     bodyLimit: 2 * 1024 * 1024,
   }).withTypeProvider<ZodTypeProvider>();
 
