@@ -1,0 +1,25 @@
+const states = {
+  errorTitle: "Bu içerik yüklenemedi",
+  unexpected: "Beklenmeyen bir hata oluştu. Sorun devam ederse destek koduyla bize ulaşın.",
+  networkTitle: "Sunucuya ulaşılamadı",
+  networkBody: "Bağlantınızı kontrol edip tekrar deneyin.",
+  forbiddenTitle: "Bu bölümü görüntüleme yetkiniz yok",
+  forbiddenBody: "Erişim için organizasyon yöneticinizle iletişime geçin.",
+  forbiddenPermission: "Gerekli yetki: {permission}",
+  notFoundTitle: "Sayfa bulunamadı",
+  notFoundBody: "Aradığınız sayfa taşınmış, silinmiş ya da hiç var olmamış olabilir.",
+  recordNotFoundTitle: "Kayıt bulunamadı",
+  recordNotFoundBody: "Kayıt silinmiş olabilir ya da erişiminiz yok.",
+  emptyFilteredTitle: "Filtrelere uyan kayıt yok",
+  emptyFilteredBody: "Filtreleri değiştirin veya temizleyin.",
+  clearFilters: "Filtreleri temizle",
+  errorSummary: "Formda düzeltilmesi gereken {count} alan var.",
+  errorSummaryOne: "Formda düzeltilmesi gereken bir alan var.",
+  conflictTitle: "Bu kayıt siz düzenlerken değişti",
+  conflictBody: "Başka biri (ya da başka bir sekme) daha yeni bir sürüm kaydetti.",
+  conflictReload: "Son hali yükle",
+  conflictOverwrite: "Yine de kaydet",
+  unsavedChanges: "Kaydedilmemiş değişiklikler var. Sayfadan çıkılsın mı?",
+};
+
+export default states;

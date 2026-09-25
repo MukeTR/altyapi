@@ -1,0 +1,63 @@
+/** Overview cards (the page title and the store card live in overview.ts). */
+const dashboard = {
+  viewAll: "Tümünü gör",
+  freshness: "Son veri:",
+  orders: {
+    title: "Son {days} gün",
+    description: "Ödemesi alınan siparişler; mağaza saat dilimine göre günlük.",
+    paid: "Ödenen siparişler",
+    placed: "{count} sipariş verildi",
+    revenue: "Ciro",
+    revenueHint: "İadeler düşülmeden",
+    average: "Ortalama sepet",
+    toFulfill: "Hazırlanacak",
+    awaitingPayment: "{count} ödeme bekliyor",
+    atLeast: "en az",
+    none: "Son 30 günde sipariş yok.",
+    truncated: "Bu dönemde 3.000'den fazla sipariş var; rakamlar ilk 3.000 siparişe göre ve alt sınır olarak gösteriliyor.",
+  },
+  chart: {
+    summary: "Son 30 günde günlük ödenen sipariş sayısı. Toplam {total}; en yüksek {peak} ({peakDay}). Günleri ok tuşlarıyla gezebilirsiniz.",
+    orders: "{count} sipariş",
+    caption: "Günler {timezone} saat dilimine göre.",
+    showTable: "Verileri tablo olarak göster",
+    tableCaption: "Günlük ödenen siparişler ve ciro",
+    day: "Gün",
+    paidOrders: "Ödenen sipariş",
+    revenue: "Ciro ({currency})",
+  },
+  recent: {
+    title: "Son siparişler",
+    empty: "Henüz sipariş yok.",
+    items: "{count} ürün",
+  },
+  lowStock: {
+    title: "Azalan stok",
+    description: "Satılabilir stoğu {threshold} veya altında olan, stok bitince satışı duran varyantlar.",
+    manage: "Stoğu yönet",
+    noProducts: "Aktif ürün yok.",
+    none: "Stoğu azalan varyant yok.",
+    out: "Tükendi",
+    left: "{count} kaldı",
+    partial: "Varyant başına stoğu en düşük {checked} ürün kontrol edildi ({scanned} aktif ürün tarandı).",
+  },
+  karmatik: {
+    title: "Kârmatik kârlılık",
+    description: "Kârmatik'ten gelen kâr ve marj özeti.",
+    lossMaking: "Zarar eden",
+    thinMargin: "Düşük marjlı",
+    missingCost: "Maliyeti eksik",
+    alerts: "{count} açık uyarı",
+    suggestions: "{count} uygulanabilir fiyat önerisi",
+  },
+  yanit: {
+    title: "Yanıt görünürlük",
+    description: "Yapay zekâ asistanlarının yanıtlarında markanızın görünürlüğü.",
+    visibility: "{days} günlük görünürlük",
+    opportunities: "Açık fırsat",
+    gaps: "{count} eksik sorgu",
+    topGaps: "Öne çıkan eksik sorgular",
+  },
+};
+
+export default dashboard;

@@ -1,0 +1,43 @@
+/** Settings › Team (organization members and roles). */
+const team = {
+  title: "Ekip",
+  meta: "{organization} organizasyonunun üyeleri ve rolleri.",
+  membersTitle: "Üyeler",
+  membersDescription: "{count} kayıt",
+  empty: "Henüz üye yok",
+  you: "Siz",
+  readOnly: "Üyeleri ve rolleri yalnızca üye yönetimi yetkisi olan kişiler değiştirebilir.",
+  columns: {
+    member: "Üye",
+    status: "Durum",
+    roles: "Roller",
+  },
+  scope: {
+    label: "Kapsam",
+    all: "Tüm mağazalar",
+  },
+  unknownStore: "Mağaza {id}…",
+  role: "Rol",
+  roles: "Roller",
+  roleN: "Rol {n}",
+  scopeN: "Kapsam {n}",
+  addGrant: "Rol ekle",
+  removeGrant: "{n}. rolü kaldır",
+  ownerOnly: "Organizasyon sahibi rolünü yalnızca organizasyon sahipleri verebilir.",
+  editRoles: "Rolleri düzenle",
+  editRolesFor: "{name} için rolleri düzenle",
+  editRolesTitle: "Rolleri düzenle",
+  editRolesDescription: "{name} için rolleri ve her rolün hangi mağazaları kapsadığını seçin.",
+  rolesReplaceNote: "Kaydettiğinizde üyenin tüm rolleri bu listeyle değiştirilir. Organizasyonun son sahibi kaldırılamaz.",
+  rolesSaved: "{name} için roller kaydedildi",
+  invite: "Üye davet et",
+  inviteTitle: "Üye davet et",
+  inviteDescription: "Davet edilen kişi, bu e-posta adresiyle açtığı hesapla daveti kabul ettiğinde seçtiğiniz rollerle katılır.",
+  inviteSubmit: "Davet oluştur",
+  inviteDeliveryTitle: "Davet e-postaları henüz gönderilmiyor",
+  inviteDeliveryBody: "Davet kaydı 7 gün geçerli olarak oluşturulur ve listede “Davet edildi” olarak görünür. Davet bağlantısı e-posta bildirimleri devreye girdiğinde iletilecek; o zamana kadar kişi daveti kabul edemez.",
+  email: "E-posta",
+  invited: "{email} için davet oluşturuldu",
+};
+
+export default team;

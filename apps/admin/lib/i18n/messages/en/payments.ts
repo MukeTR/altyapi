@@ -1,0 +1,82 @@
+import type trPayments from "../tr/payments";
+
+const payments: typeof trPayments = {
+  title: "Payments",
+  commands: { connect: "Connect a payment provider" },
+  meta: "Connect your own PayTR or iyzico account. Payments go straight to your account.",
+  readOnly: "Only people with the payment management permission can connect or change payment accounts.",
+  noActiveTitle: "No active payment provider",
+  noActiveBody: "Without an active payment account customers cannot complete checkout.",
+  connect: "Connect",
+  updateCredentials: "Update credentials",
+  enable: "Enable",
+  disable: "Disable",
+  remove: "Remove connection",
+  removeTitle: "Remove the {provider} connection?",
+  removeBody: "The stored account details are deleted and no new payments can be taken with this provider. Past payments and refunds are not affected.",
+  connected: "{provider} connected",
+  updated: "{provider} credentials updated",
+  enabled: "{provider} enabled",
+  disabled: "{provider} disabled",
+  removed: "{provider} connection removed",
+  notConnected: "This provider is not connected.",
+  account: "Account",
+  verifiedAt: "Last verified",
+  priority: "Priority",
+  connectedAt: "Connected on",
+  lastError: "Last error",
+  testModeNote: "You are in test mode: real cards are not charged. Reconnect with live credentials before you start selling.",
+  notification: {
+    title: "Payment notifications",
+    url: "Notification address",
+    panel: "Paste this address into the notification address field of the provider's panel.",
+    perRequest: "The notification address is sent automatically with every payment request; nothing needs to be set in the provider's panel.",
+  },
+  requiresPhoneNote: "This provider requires the customer’s phone number at payment.",
+  capabilities: {
+    title: "Supported operations",
+    partialRefund: "Partial refunds",
+    cancel: "Payment cancellation",
+  },
+  mode: {
+    label: "Environment",
+    test: "Test (sandbox)",
+    live: "Live",
+    testHelp: "The provider's test environment is used; you can make trial payments with test cards.",
+    liveHelp: "Real payments are taken. Enter the credentials of the provider's live account.",
+  },
+  dialog: {
+    connectTitle: "Connect your {provider} account",
+    updateTitle: "Update {provider} credentials",
+    description: "The details are verified with the provider before they are saved, and stored encrypted. Once saved they are never shown on any screen.",
+    submit: "Verify and save",
+    secretHelp: "Secret value: it is not shown after saving.",
+    priority: "Priority",
+    priorityHelp: "When several providers are active, checkout uses the one with the higher priority first (0–100).",
+    replaceNote: "To update, enter every value again; stored values are not shown.",
+    verifyNote: "Verification sends the provider a query that involves no payment.",
+    providerSaid: "Provider response: {message}",
+  },
+  providers: {
+    paytr: {
+      name: "PayTR",
+      summary: "Card, instalment and bank transfer payments. The notification address is set in the PayTR merchant panel.",
+      notificationHelp: "In the PayTR merchant panel, go to Support & Setup › Settings, paste this address into the Notification URL field and save.",
+    },
+    iyzico: {
+      name: "iyzico",
+      summary: "Card and instalment payments. The notification address is passed to iyzico with every request.",
+    },
+  },
+  paytr: {
+    merchant_id: "Merchant ID (merchant_id)",
+    merchant_key: "Merchant key (merchant_key)",
+    merchant_salt: "Merchant salt (merchant_salt)",
+  },
+  iyzico: {
+    api_key: "API key",
+    secret_key: "Secret key",
+  },
+};
+
+export default payments;

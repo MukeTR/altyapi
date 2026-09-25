@@ -1,0 +1,45 @@
+const onboarding = {
+  metaTitle: "Kurulum",
+  title: "Mağazanızı kuralım",
+  subtitle: "Önce işletmenizi temsil eden organizasyonu, ardından ilk mağazanızı oluşturun.",
+  steps: {
+    label: "Kurulum adımları",
+    organization: "Organizasyon",
+    store: "Mağaza",
+  },
+  organization: {
+    title: "Organizasyon",
+    description: "Ekibiniz ve mağazalarınız bu organizasyonun altında toplanır.",
+    name: "Organizasyon adı",
+    namePlaceholder: "Örnek: Kaya Tekstil",
+    slug: "Kısa ad",
+    slugHint: "Boş bırakırsanız addan üretilir. Küçük harf, rakam ve tire.",
+    submit: "Organizasyonu oluştur",
+    created: "{name} oluşturuldu.",
+  },
+  store: {
+    title: "Mağaza",
+    description: "Mağaza oluşturulduğunda vitrin, varsayılan depo, fiyat listesi ve vergi sınıfı hazırlanır.",
+    name: "Mağaza adı",
+    namePlaceholder: "Örnek: Kaya Butik",
+    slug: "Mağaza adresi",
+    slugHint: "Mağazanız {host} adresinde yayınlanır. En az 3 karakter.",
+    slugHintEmpty: "Boş bırakırsanız addan üretilir. En az 3 karakter.",
+    defaultLocale: "Varsayılan dil",
+    defaultLocaleHint: "Vitrin içeriğinin ana dili. Diğer dilleri sonra ekleyebilirsiniz.",
+    currency: "Para birimi",
+    timezone: "Saat dilimi",
+    timezoneHint: "Sipariş tarihleri ve zamanlanmış yayınlar bu saat dilimine göre gösterilir.",
+    country: "Ülke",
+    contactEmail: "İletişim e-postası",
+    contactEmailHint: "Müşteri bildirimlerinde yanıt adresi olarak kullanılır.",
+    submit: "Mağazayı oluştur",
+    created: "{name} mağazası oluşturuldu.",
+  },
+  noStoreAccess: {
+    title: "Bu organizasyonda erişebildiğiniz mağaza yok",
+    body: "Bir yöneticiden size mağaza erişimi vermesini isteyin.",
+  },
+};
+
+export default onboarding;
