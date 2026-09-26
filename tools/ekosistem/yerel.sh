@@ -99,9 +99,9 @@ has_key() {
 # Host part of a URL (scheme, credentials, port and path removed).
 url_host() {
   local u="${1#*://}"
+  # Authority first (path, query and fragment cut), then credentials: "https://x.com/@127.0.0.1" is x.com.
+  u="${u%%[/?#]*}"
   u="${u##*@}"
-  u="${u%%/*}"
-  u="${u%%\?*}"
   if [[ "$u" == \[* ]]; then
     u="${u%%]*}]"
   else
@@ -112,9 +112,8 @@ url_host() {
 
 url_port() {
   local u="${1#*://}"
+  u="${u%%[/?#]*}"
   u="${u##*@}"
-  u="${u%%/*}"
-  u="${u%%\?*}"
   [[ "$u" == \[* ]] && u="${u#*]}"
   [[ "$u" == *:* ]] && printf '%s' "${u##*:}"
 }
