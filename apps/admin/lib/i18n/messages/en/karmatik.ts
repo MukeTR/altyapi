@@ -30,6 +30,10 @@ const karmatik: typeof trKarmatik = {
     cost: "Cost",
     commission: "Commission",
     shipping: "Shipping",
+    shipping_cost: "Shipping cost",
+    tax_rate: "VAT rate",
+    pos_fee: "Card (POS) fee",
+    min_margin: "Minimum margin setting",
   },
   overview: {
     profitTitle: "Profitability",

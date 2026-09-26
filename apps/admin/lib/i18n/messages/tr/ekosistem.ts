@@ -67,6 +67,7 @@ const ekosistem = {
     grantsLegend: "{peer} bu mağazadan neleri okuyabilsin?",
     grantsHelp: "Maliyet ve sipariş gibi hassas veriler varsayılan olarak kapalıdır; paylaşmak için tek tek işaretleyin.",
     receives: "Karşılığında bu mağaza şunları okur",
+    receivesHelp: "Açık onay gerektiren izinleri (ör. kârlılık verileri) {peer} tarafındaki kullanıcı ayrıca işaretler; işaretlenmeyen veri bu mağazaya gelmez.",
     oneLink: "Bir mağazanın {peer} ile en fazla bir etkin bağlantısı olabilir. Yeni bir kod, önceki kullanılmamış kodları geçersiz kılar.",
   },
   accept: {
@@ -83,6 +84,7 @@ const ekosistem = {
     toPeerHelp: "İstediğiniz izinlerin işaretini kaldırarak daraltabilirsiniz.",
     fromPeer: "Bu mağaza {peer}’den şunları okuyacak",
     explicitNote: "Bu bağlantı açık onay gerektiren izinler içeriyor. Onaylamadan önce listeyi dikkatle inceleyin.",
+    peerWithheld: "{peer} şu izinleri vermedi: {scopes}. Bu veriler çekilmeyecek; gerekirse {peer}’de kodu oluştururken işaretleyin.",
     pendingNote: "Onaylamazsanız bağlantı 10 dakika sonra kendiliğinden silinir.",
     confirm: "Onayla ve bağla",
     reject: "Reddet",

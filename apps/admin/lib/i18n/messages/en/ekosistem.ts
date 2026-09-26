@@ -68,6 +68,7 @@ const ekosistem: typeof trEkosistem = {
     grantsLegend: "What may {peer} read from this store?",
     grantsHelp: "Sensitive data such as costs and orders is off by default; tick each one to share it.",
     receives: "In return this store reads",
+    receivesHelp: "Permissions that need explicit consent (e.g. profitability data) are ticked separately by the user in {peer}; data that is not ticked does not reach this store.",
     oneLink: "A store can have at most one active link with {peer}. A new code invalidates earlier unused codes.",
   },
   accept: {
@@ -84,6 +85,7 @@ const ekosistem: typeof trEkosistem = {
     toPeerHelp: "Untick permissions to narrow what is shared.",
     fromPeer: "This store will read from {peer}",
     explicitNote: "This link includes permissions that need explicit consent. Review the list carefully before you approve.",
+    peerWithheld: "{peer} did not grant: {scopes}. This data will not be pulled; tick it when you create the code in {peer} if you need it.",
     pendingNote: "If you do not approve, the link is deleted automatically after 10 minutes.",
     confirm: "Approve and link",
     reject: "Reject",

@@ -29,6 +29,10 @@ const karmatik = {
     cost: "Maliyet",
     commission: "Komisyon",
     shipping: "Kargo",
+    shipping_cost: "Kargo maliyeti",
+    tax_rate: "KDV oranı",
+    pos_fee: "POS ücreti",
+    min_margin: "Asgari marj ayarı",
   },
   overview: {
     profitTitle: "Kârlılık",

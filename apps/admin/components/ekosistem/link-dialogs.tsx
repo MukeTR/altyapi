@@ -15,9 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Stepper } from "@/components/ui/stepper";
 import { ApiError, bff } from "@/lib/api/client";
 import type { ApiErrorInfo } from "@/lib/api/errors";
-import type { AcceptedCode, AdminLink, IssuedCode, Peer, PeerConfig } from "@/lib/ekosistem/types";
+import { isExplicitConsentScope, type AcceptedCode, type AdminLink, type IssuedCode, type Peer, type PeerConfig } from "@/lib/ekosistem/types";
 import { PeerIdentity } from "./peer-identity";
-import { ScopeChecklist, ScopeList } from "./scope-checklist";
+import { ScopeChecklist, ScopeList, useScopeText } from "./scope-checklist";
 
 /** Every scope this store may grant the peer: pre-ticked defaults, then explicit-consent ones. */
 function grantable(config: PeerConfig): string[] {
@@ -137,6 +137,7 @@ export function IssueCodeDialog({ peer, config, open, onOpenChange, onIssued }: 
           <div className="flex flex-col gap-1">
             <h3 className="text-base font-medium text-fg">{t("ekosistem.issue.receives")}</h3>
             <ScopeList scopes={config.peerDefaultGrants} />
+            {config.peerDefaultGrants.some(isExplicitConsentScope) ? <p className="text-xs text-fg-muted">{t("ekosistem.issue.receivesHelp", { peer: peerName })}</p> : null}
           </div>
           <p className="text-sm text-fg-muted">{t("ekosistem.issue.oneLink", { peer: peerName })}</p>
         </form>
@@ -162,7 +163,10 @@ export function AcceptCodeDialog({ peer, config, open, onOpenChange, onChanged }
   const [pending, setPending] = useState<"claim" | "confirm" | "reject" | null>(null);
   const [error, setError] = useState<ApiErrorInfo | null>(null);
   const message = useDescribe(error);
+  const scopeText = useScopeText();
   const prefix = peer === "karmatik" ? "ek1_k_" : "ek1_y_";
+  // Explicit-consent scopes the peer's user left unticked (e.g. profit:read): that data is never pulled.
+  const withheld = accepted ? config.peerDefaultGrants.filter((s) => isExplicitConsentScope(s) && !accepted.grants.fromPeer.includes(s)) : [];
 
   const reset = () => {
     setCode("");
@@ -286,6 +290,9 @@ export function AcceptCodeDialog({ peer, config, open, onOpenChange, onChanged }
               <h3 className="text-base font-medium text-fg">{t("ekosistem.accept.fromPeer", { peer: peerName })}</h3>
               <ScopeList scopes={accepted.grants.fromPeer} />
             </div>
+            {withheld.length ? (
+              <InlineAlert tone="info">{t("ekosistem.accept.peerWithheld", { peer: peerName, scopes: withheld.map((s) => scopeText.title(s)).join(", ") })}</InlineAlert>
+            ) : null}
             <p className="text-sm text-fg-muted">{t("ekosistem.accept.pendingNote")}</p>
           </>
         ) : (
