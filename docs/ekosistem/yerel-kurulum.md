@@ -246,3 +246,34 @@ komutlarından önce iki değişkeni yerel adresle export et ve `prisma migrate 
   Yoksa Kârmatik'te yeni kod oluştururken işaretle.
 - **Yerel vitrinde ödeme açılmıyor:** tohumun ödeme bağlantısı bilinçli olarak devre dışıdır (sahte anahtar).
 - **Log'lar renkli:** altyapi günlükçüsü her zaman renklendirir; `yerel.sh logs` renk kodlarını ayıklar.
+
+## 10. Uçtan uca test: altyapi ↔ Yanıt (`e2e-altyapi-yanit.ts`)
+
+Gerçek süreçlere karşı (altyapi API + worker, Yanıt next dev); sahte eş yok.
+
+```bash
+tools/ekosistem/yerel.sh up altyapi-api altyapi-worker yanit
+tools/ekosistem/yerel.sh test      # ya da: cd apps/api && node --env-file=../../.env --import tsx ../../tools/ekosistem/e2e-altyapi-yanit.ts
+tools/ekosistem/yerel.sh down
+```
+
+- **Hermetik:** her koşu yeni bir altyapi hesabı/mağazası (`e1-…`, `tohum-altyapi.ts --email/--slug`) ve yeni bir
+  Yanıt BRAND kiracısı (`ekosistem-yerel-tohum.ts --email/--kiraci`) açar; paylaşılan fixture hesaplarına dokunmaz.
+  Bağlantılar senaryo içinde kaldırılır (kaldırma da sınanır), Yanıt kiracısı sonda hesap silme ucuyla silinir
+  (`E2E_KORU=1` bırakır). altyapi'de silme ucu olmadığından test mağazası yerel DB'de kalır.
+- **A** altyapi kod verir → Yanıt kabul/onay → altyapi onay → iki tarafta active; Yanıt'ın katalog eşitleme
+  tetikleyicisiyle katalog (ürün kimliği, başlık, URL, KDV dahil fiyat min/maks, stok, ilk varyantın barkod/SKU'su,
+  varyant sayısı) altyapi'nin sunduğuyla birebir; ürün yayından kaldırılıp geri alınınca §10 dürtmesiyle Yanıt'a
+  yansır; worker (`ekosistem.pull-link` işi) §9.1–9.4'ü çeker, `yanit_visibility_snapshots` (7/30), `yanit_gaps`,
+  `yanit_opportunities`, `yanit_citations` Yanıt'ın imzalı uçlarının o anda sunduğu değerlerle birebir; Yanıt'ın
+  `max-age`'i saklanır ve sonraki çekme saatlik vadeden önce değildir; fırsattan taslak sayfa (yayınlanmaz, ikinci
+  istek aynı taslağı döner); Yanıt tarafından kaldırma → altyapi `peer_deleted`, katalog bağlantısı kesilir.
+- **B** Yanıt kod verir → altyapi kabul/onay → Yanıt onay → active; katalog yeniden bağlanır ve eşitlenir, worker
+  çeker; altyapi'den kaldırma → worker'ın DELETE teslimiyle Yanıt'ta `revoked` (`peer`), kaldırılmış bağlantıya imzalı
+  istek iki yönde `401 link_invalid`, Yanıt'taki altyapi kataloğu `DISCONNECTED` ve boş.
+- **C** yanlış `Ekosistem-Product` (iki yönde `401 signature_invalid`), nonce tekrarı (iki yönde `401 replay`),
+  bekleyen bağlantıda veri ucu (`pending` ve `awaiting_approval`, iki yönde `409 link_pending`).
+- Beklentiler sabit sayı değildir: Yanıt'ın imzalı uçlarının sunduğu değerden ya da Yanıt tohumunun fixture'dan
+  hesaplayıp yazdığı "beklenen" satırlarından türetilir. Yanıt'a yalnız HTTP gider; tek istisna, hiçbir uçta olmayan
+  katalog tanımlayıcıları (`CatalogProduct.identifiers`) için yerel Yanıt DB'sine salt okunur psql sorgusu.
+- Hız sınırları gevşetilmez: koşu başına her yönde 1 claim ve 1 Yanıt girişi (IP başına 10/15 dk).
