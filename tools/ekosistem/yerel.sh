@@ -9,7 +9,7 @@
 #   yerel.sh status            services, dependencies and guards
 #   yerel.sh logs <servis> [-f]
 #   yerel.sh tick              call the scheduled-job endpoints once, in order
-#   yerel.sh tohum             run the altyapi seed (tohum-altyapi.ts; API must be up)
+#   yerel.sh tohum [ürün…]     fixture seeds: altyapi (default), karmatik, yanit or hepsi
 #   yerel.sh test              end-to-end tests (skeleton)
 #
 # Services: altyapi-api (:4000), altyapi-worker (:4100 health), karmatik (:3999), yanit (:3200).
@@ -510,7 +510,12 @@ cmd_logs() {
   local svc="${1:-}"
   is_service "$svc" || { warn "kullanım: yerel.sh logs <${SERVICES[*]// /|}> [-f]"; return 2; }
   [[ -f "$(log_file "$svc")" ]] || { warn "$svc için log yok."; return 1; }
-  if [[ "${2:-}" == "-f" ]]; then tail -n 100 -F "$(log_file "$svc")"; else tail -n 100 "$(log_file "$svc")"; fi
+  # The altyapi logger always colours its output; strip ANSI codes for reading.
+  if [[ "${2:-}" == "-f" ]]; then
+    tail -n 100 -F "$(log_file "$svc")" | perl -pe 'BEGIN { $| = 1 } s/\e\[[0-9;]*m//g'
+  else
+    tail -n 100 "$(log_file "$svc")" | perl -pe 's/\e\[[0-9;]*m//g'
+  fi
 }
 
 # One scheduled endpoint call: prints status and a short body; 404 means not implemented yet.
@@ -570,10 +575,44 @@ cmd_tick() {
   say "altyapi: worker kendi zamanlayıcısıyla 60 sn'de bir çeker (ekosistem.schedule-pulls); tetiklenecek uç yok."
 }
 
+# Seeds of the shared fixture. altyapi's needs the API up; Kârmatik's and Yanıt's scripts belong
+# to those repositories and run here only behind the same local-env guards as their servers.
 cmd_tohum() {
-  local tsx="$ROOT/apps/api/node_modules/.bin/tsx"
-  [[ -x "$tsx" ]] || { warn "tsx bulunamadı: $tsx (pnpm install)."; return 1; }
-  (cd "$ROOT/apps/api" && node --env-file=../../.env --import tsx "$ROOT/tools/ekosistem/tohum-altyapi.ts" "$@")
+  local products=("$@") p failed=0 base_path="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  ((${#products[@]})) || products=(altyapi)
+  [[ "${products[0]}" == "hepsi" ]] && products=(altyapi karmatik yanit)
+  for p in "${products[@]}"; do
+    case "$p" in
+      altyapi)
+        say "▶ altyapi tohumu"
+        [[ -x "$ROOT/apps/api/node_modules/.bin/tsx" ]] || { warn "tsx bulunamadı (pnpm install)."; failed=1; continue; }
+        (cd "$ROOT/apps/api" && node --env-file=../../.env --import tsx "$ROOT/tools/ekosistem/tohum-altyapi.ts") || failed=1
+        ;;
+      karmatik)
+        say "▶ Kârmatik tohumu (scripts/ekosistem-yerel-tohum.ts)"
+        if ! karmatik_env_ok || [[ ! -f "$KARMATIK_DIR/scripts/ekosistem-yerel-tohum.ts" ]]; then
+          warn "karmatik tohumu atlandı."
+          failed=1
+          continue
+        fi
+        (cd "$KARMATIK_DIR" && env -i HOME="$HOME" PATH="$HOME/.bun/bin:$base_path" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp}" bun scripts/ekosistem-yerel-tohum.ts) || failed=1
+        ;;
+      yanit)
+        say "▶ Yanıt tohumu (packages/db scripts/ekosistem-yerel-tohum.ts)"
+        if ! yanit_env_ok || [[ ! -f "$YANIT_DIR/packages/db/scripts/ekosistem-yerel-tohum.ts" ]]; then
+          warn "yanit tohumu atlandı."
+          failed=1
+          continue
+        fi
+        (cd "$YANIT_DIR" && env -i HOME="$HOME" PATH="$NODE22_BIN:$base_path" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp}" pnpm --filter @yanit/db seed:ekosistem-yerel) || failed=1
+        ;;
+      *)
+        warn "bilinmeyen tohum: $p (altyapi | karmatik | yanit | hepsi)"
+        failed=1
+        ;;
+    esac
+  done
+  return $failed
 }
 
 cmd_test() {
