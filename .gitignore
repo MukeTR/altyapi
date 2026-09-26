@@ -14,3 +14,6 @@ coverage/
 *.tfstate
 *.tfstate.*
 dump.rdb
+
+# Local ecosystem orchestration state (pids, logs, credentials)
+tools/ekosistem/.yerel/
