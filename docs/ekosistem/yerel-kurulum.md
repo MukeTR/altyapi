@@ -126,6 +126,20 @@ Yollar:
 - Ödeme bağlantısı (iyzico, `test`, sahte anahtarlar) iş bitince **devre dışı** bırakılır: yerel vitrinde
   gerçek ödeme açılmaz (bilinçli). Kâr koruması bu yüzden sağlayıcıyı `unknown` gönderir.
 
+**Hermetik test hesabı** (uçtan uca testler her koşuda yeni hesap açar): aynı fixture yeni bir kullanıcı /
+organizasyon / mağazaya yüklenir; parola ortamdan gelir (argv'ye yazılmaz), `kimlikler.env`'e dokunulmaz ve son
+satır makinece okunur:
+
+```bash
+cd apps/api && ALTYAPI_TOHUM_PAROLA=<≥12 karakter> node --env-file=../../.env --import tsx \
+  ../../tools/ekosistem/tohum-altyapi.ts --email e2e-123@altyapi.local --slug e2e-123
+# … TOHUM_SONUC {"email","userId","organizationId","organizationSlug","storeId","storeSlug"}
+```
+
+`--email` yalnız `.local` alan adlı olabilir; paylaşılan hesabın e-postası ya da `deneme-tekstil` slug'ı test hesabı
+için reddedilir. Argümansız çalıştırma eskisi gibi paylaşılan fixture hesabını günceller. altyapi'de hesap/mağaza
+silme ucu olmadığından test mağazaları yerel DB'de kalır (slug `e2e-…`).
+
 Sonunda sözleşme §7.2/§7.3 dışa aktarımını (bağlı bir eşin göreceği yanıt) okuyup doğrular; beklenen sayılar fixture
 listelerinden türetilir. Örnek çıktı:
 

@@ -17,6 +17,15 @@
  *     payment_transactions.fee_amount, and a refund through the API would call iyzico.
  * Everything is synthetic (PLAN.md fixture, brand "Deneme Tekstil"). The API is never started
  * here: without it the seed stops.
+ *
+ * Hermetic test accounts (end-to-end runs open a fresh account every time):
+ *
+ *   ALTYAPI_TOHUM_PAROLA=<parola> node … tohum-altyapi.ts --email e2e-123@altyapi.local --slug e2e-123
+ *
+ * loads the same fixture into a new user / organization / store (both slugs = --slug). The
+ * password comes from the environment (never argv), kimlikler.env is left untouched, and the
+ * last line is `TOHUM_SONUC {json}` (email, userId, organizationId/Slug, storeId/Slug). Without
+ * arguments the seed works on the shared fixture account exactly as before.
  */
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from "node:fs";
@@ -65,9 +74,9 @@ import { exportCatalogProducts, exportOrders, type EkosistemServerDeps, type Lin
 // Fixture (PLAN.md "Ortak yerel fixture"); amounts in kuruş, VAT-inclusive
 // ---------------------------------------------------------------------------
 
-const EMAIL = "ekosistem-yerel@altyapi.local";
-const ORG = { name: "Deneme Tekstil", slug: "deneme-tekstil" };
-const STORE = { name: "Deneme Tekstil", slug: "deneme-tekstil" };
+const FIXTURE_EMAIL = "ekosistem-yerel@altyapi.local";
+const FIXTURE_SLUG = "deneme-tekstil";
+const BRAND_NAME = "Deneme Tekstil";
 const TAX = { code: "kdv10", name: "KDV %10", rateBps: 1000, pricesIncludeTax: true };
 const STOCK_PER_VARIANT = 50;
 
@@ -250,6 +259,44 @@ function assertLocal(label: string, raw: string, port?: string) {
   if (port && url.port !== port) fail(`${label} beklenen yerel port ${port} değil (${url.port || "varsayılan"}).`);
 }
 
+/** Which account the seed loads the fixture into (see the header). */
+interface SeedAccount {
+  email: string;
+  org: { name: string; slug: string };
+  store: { name: string; slug: string };
+  /** The shared fixture account: credentials live in kimlikler.env. */
+  fixture: boolean;
+  /** Test accounts only: from ALTYAPI_TOHUM_PAROLA. */
+  password: string | null;
+}
+
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
+const TEST_EMAIL_RE = /^[a-z0-9._+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)*\.local$/;
+
+function parseSeedArgs(argv: readonly string[], env: Record<string, string | undefined>): SeedAccount {
+  const values = new Map<string, string>();
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    const m = /^--(email|slug)(?:=(.*))?$/.exec(arg);
+    if (!m) fail(`bilinmeyen argüman: ${arg} (yalnız --email ve --slug)`);
+    const value = m[2] ?? argv[++i];
+    if (value === undefined || value === "") fail(`--${m[1]} bir değer ister.`);
+    values.set(m[1]!, value);
+  }
+  const email = (values.get("email") ?? FIXTURE_EMAIL).toLowerCase();
+  const slug = values.get("slug") ?? FIXTURE_SLUG;
+  const fixture = email === FIXTURE_EMAIL && slug === FIXTURE_SLUG;
+  const account = { email, org: { name: BRAND_NAME, slug }, store: { name: BRAND_NAME, slug }, fixture, password: null };
+  if (fixture) return account;
+  // A test account must not reuse the fixture's email or slugs: that data belongs to the shared account.
+  if (email === FIXTURE_EMAIL || slug === FIXTURE_SLUG) fail("Test hesabı paylaşılan fixture hesabının e-postasını ya da slug'ını kullanamaz; ikisini de verin.");
+  if (!TEST_EMAIL_RE.test(email)) fail(`--email yalnız .local alan adlı bir test adresi olabilir (${email}).`);
+  if (!SLUG_RE.test(slug)) fail(`--slug küçük harf, rakam ve - olmalı (${slug}).`);
+  const password = env.ALTYAPI_TOHUM_PAROLA ?? "";
+  if (password.length < 12) fail("Test hesabı için ALTYAPI_TOHUM_PAROLA (en az 12 karakter) ortamda verilmeli.");
+  return { ...account, password };
+}
+
 function readKimlik(): Map<string, string> {
   const out = new Map<string, string>();
   if (!existsSync(KIMLIK)) return out;
@@ -335,9 +382,32 @@ function sessionFrom(headers: Headers): string {
   fail("Oturum çerezi (altyapi_session) gelmedi.");
 }
 
-async function signIn(): Promise<{ userId: string; created: boolean }> {
+async function register(email: string, password: string): Promise<{ userId: string; headers: Headers }> {
+  const res = await http<{ user: { id: string } }>("POST", "/v1/auth/register", { email, password, name: "Ekosistem Yerel", locale: "tr" });
+  return { userId: res.data.user.id, headers: res.headers };
+}
+
+async function signIn(account: SeedAccount): Promise<{ userId: string; created: boolean }> {
+  if (!account.fixture) {
+    // Test account: the caller owns the password; log in when the account exists, else register.
+    try {
+      const res = await http<{ user: { id: string } }>("POST", "/v1/auth/login", { email: account.email, password: account.password });
+      SESSION = sessionFrom(res.headers);
+      return { userId: res.data.user.id, created: false };
+    } catch (err) {
+      if (!(err instanceof HttpError && err.status === 401)) throw err;
+    }
+    try {
+      const { userId, headers } = await register(account.email, account.password!);
+      SESSION = sessionFrom(headers);
+      return { userId, created: true };
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 409) fail(`${account.email} zaten kayıtlı ve ALTYAPI_TOHUM_PAROLA tutmuyor.`);
+      throw err;
+    }
+  }
   const saved = readKimlik();
-  const email = saved.get("ALTYAPI_EMAIL") || EMAIL;
+  const email = saved.get("ALTYAPI_EMAIL") || account.email;
   const password = saved.get("ALTYAPI_PASSWORD");
   if (password) {
     try {
@@ -351,11 +421,11 @@ async function signIn(): Promise<{ userId: string; created: boolean }> {
   }
   const fresh = randomBytes(24).toString("base64url");
   try {
-    const res = await http<{ user: { id: string } }>("POST", "/v1/auth/register", { email, password: fresh, name: "Ekosistem Yerel", locale: "tr" });
+    const { userId, headers } = await register(email, fresh);
     // Saved before anything else so a failed run can log in again.
     await writeKimlik({ ALTYAPI_EMAIL: email, ALTYAPI_PASSWORD: fresh });
-    SESSION = sessionFrom(res.headers);
-    return { userId: res.data.user.id, created: true };
+    SESSION = sessionFrom(headers);
+    return { userId, created: true };
   } catch (err) {
     if (err instanceof HttpError && err.status === 409) fail(`${email} zaten kayıtlı ama parolası ${KIMLIK} içinde yok (ALTYAPI_PASSWORD).`);
     throw err;
@@ -471,7 +541,7 @@ function productBody(p: FixtureProduct, taxClassId: string, locationId: string, 
     status: "active",
     kind: "physical",
     translations: { tr: { title: p.title, handle: p.handle, descriptionHtml: p.description } },
-    vendorName: STORE.name,
+    vendorName: BRAND_NAME,
     productType: p.productType,
     taxClassId,
     options: [
@@ -501,6 +571,8 @@ function productMatches(p: FixtureProduct, d: ProductDetail, taxClassId: string)
 }
 
 async function main() {
+  const account = parseSeedArgs(process.argv.slice(2), process.env);
+  const { org: ORG, store: STORE } = account;
   const env = parseEnv(apiEnvSchema, process.env);
   if (env.APP_ENV !== "local") fail(`APP_ENV=${env.APP_ENV}; tohum yalnız APP_ENV=local ile çalışır.`);
   assertLocal("DATABASE_URL", env.DATABASE_URL, "5433");
@@ -521,8 +593,8 @@ async function main() {
 
   try {
     // 1. Merchant user, organization, store
-    const { userId, created } = await signIn();
-    console.log(`✓ kullanıcı ${EMAIL} (${created ? "oluşturuldu" : "giriş yapıldı"})`);
+    const { userId, created } = await signIn(account);
+    console.log(`✓ kullanıcı ${account.email} (${created ? "oluşturuldu" : "giriş yapıldı"})`);
 
     const me = await get<{ organizations: Array<{ id: string; slug: string }> }>("/v1/me");
     let org = me.organizations.find((o) => o.slug === ORG.slug);
@@ -534,7 +606,7 @@ async function main() {
     if (!store) store = await post<{ id: string; slug: string; status: string }>(`${orgBase}/stores`, { ...STORE, defaultLocale: "tr", defaultCurrency: "TRY", countryCode: "TR" });
     const base = `${orgBase}/stores/${store.id}`;
     if (store.status !== "active") await patch(base, { status: "active" });
-    await writeKimlik({ ALTYAPI_EMAIL: EMAIL, ALTYAPI_ORG_ID: org.id, ALTYAPI_STORE_ID: store.id, ALTYAPI_ORG_SLUG: org.slug, ALTYAPI_STORE_SLUG: store.slug });
+    if (account.fixture) await writeKimlik({ ALTYAPI_EMAIL: account.email, ALTYAPI_ORG_ID: org.id, ALTYAPI_STORE_ID: store.id, ALTYAPI_ORG_SLUG: org.slug, ALTYAPI_STORE_SLUG: store.slug });
     console.log(`✓ organizasyon ${org.slug} (${org.id}), mağaza ${store.slug} (${store.id})`);
 
     // Service-layer context of the same user (same grants the API would resolve).
@@ -627,8 +699,13 @@ async function main() {
       const touch = { at, ...o.touch };
       await setAttribution(cartDeps, scope, token, { firstTouch: touch, lastTouch: touch, consent: { analytics: true, marketing: false } });
       const started = await startCheckout(checkoutDeps, scope, token, { provider: "iyzico", returnBaseUrl: "http://localhost:3001" }, { ip: "127.0.0.1", userAgent: "altyapi-tohum" });
-      const [attempt] = await withTenantTx(db, scope, (tx) => tx.select({ amount: paymentAttempts.amount }).from(paymentAttempts).where(eq(paymentAttempts.id, started.payment.attemptId)));
-      const body = { status: "success", amount: attempt!.amount.toString() };
+      const [attempt] = await withTenantTx(db, scope, (tx) =>
+        tx.select({ amount: paymentAttempts.amount, reference: paymentAttempts.providerReference }).from(paymentAttempts).where(eq(paymentAttempts.id, started.payment.attemptId)),
+      );
+      // Like a real callback, the body names its payment (iyzico: conversation id / token). Payment
+      // events are deduplicated by payload hash, so a bare {status, amount} would be taken for the
+      // same notification as an equal order in another store and never confirm this one.
+      const body = { status: "success", conversationId: attempt!.reference, amount: attempt!.amount.toString() };
       const result = await handleIyzicoCallback(payments, started.payment.attemptId, { headers: {}, body, rawBody: JSON.stringify(body) });
       if (result.outcome !== "paid") fail(`${o.key} siparişi ödenmedi (${result.outcome}).`);
       orderIds.set(o.key, started.orderId);
@@ -703,8 +780,13 @@ async function main() {
     }
     console.log("\nDoğrulama:");
     for (const [label, ok, expected] of checks) console.log(`  ${ok ? "✓" : "✗"} ${label} (${expected})`);
-    await writeKimlik({ ALTYAPI_ORG_ID: org.id, ALTYAPI_STORE_ID: store.id });
-    console.log(`\nKimlikler: ${KIMLIK} (ALTYAPI_EMAIL, ALTYAPI_PASSWORD, ALTYAPI_ORG_ID, ALTYAPI_STORE_ID)`);
+    if (account.fixture) {
+      await writeKimlik({ ALTYAPI_ORG_ID: org.id, ALTYAPI_STORE_ID: store.id });
+      console.log(`\nKimlikler: ${KIMLIK} (ALTYAPI_EMAIL, ALTYAPI_PASSWORD, ALTYAPI_ORG_ID, ALTYAPI_STORE_ID)`);
+    } else {
+      // Machine-readable result for the end-to-end runner (no secrets: the caller has the password).
+      console.log(`TOHUM_SONUC ${JSON.stringify({ email: account.email, userId, organizationId: org.id, organizationSlug: org.slug, storeId: store.id, storeSlug: store.slug })}`);
+    }
     if (checks.some(([, ok]) => !ok)) process.exitCode = 1;
   } finally {
     await database.close();
