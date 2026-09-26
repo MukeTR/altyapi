@@ -277,3 +277,33 @@ tools/ekosistem/yerel.sh down
   hesaplayıp yazdığı "beklenen" satırlarından türetilir. Yanıt'a yalnız HTTP gider; tek istisna, hiçbir uçta olmayan
   katalog tanımlayıcıları (`CatalogProduct.identifiers`) için yerel Yanıt DB'sine salt okunur psql sorgusu.
 - Hız sınırları gevşetilmez: koşu başına her yönde 1 claim ve 1 Yanıt girişi (IP başına 10/15 dk).
+
+## 11. Uçtan uca test: Kârmatik ↔ Yanıt (Kârmatik deposu, `scripts/ekosistem-e2e-yanit.ts`)
+
+Gerçek süreçlere karşı (Kârmatik vite dev :3999, Yanıt next dev :3200); sahte eş yok. Test Kârmatik deposundadır
+(bun, harici mod: Kârmatik eylemleri süreç içi kütüphaneyle, zamanlanmış işler `apikey` kancalarıyla, Yanıt yalnız
+HTTP ile).
+
+```bash
+tools/ekosistem/yerel.sh up karmatik yanit
+tools/ekosistem/yerel.sh test      # ya da: cd /Users/macos/karmatikdev && bun --env-file=.env.development.local scripts/ekosistem-e2e-yanit.ts
+tools/ekosistem/yerel.sh down
+```
+
+`yerel.sh test` bu testi yalnız 3999 ve 3200'ü `yerel.sh` başlattıysa çalıştırır.
+
+- **Hermetik:** her koşu yeni bir Kârmatik kullanıcısı (`ekosistem-yerel-tohum.ts --email e2-…@karmatik.local`,
+  parola `KARMATIK_TOHUM_PAROLA`) ve yeni bir Yanıt BRAND kiracısı açar; paylaşılan fixture hesaplarına dokunmaz ve
+  onlarda bağlantı bırakmaz. Sonda Yanıt kiracısı hesap silme ucuyla, Kârmatik kullanıcısı yönetici silme yoluyla
+  (`hesap-silme.server` hesabiSil) silinir. `E2E_KORU=1` bırakır.
+- **A** Kârmatik kod verir (`ek1_k_`) → Yanıt kabul/onay → Kârmatik onay; Yanıt okuma modelleri Kârmatik'in sunduğu
+  §8.1 / §8.2 özet / §8.4 / §8.6 ile birebir; `profit:summary` dışı kâr alanı Yanıt'a gitmez (tel, Yanıt DB sütunları,
+  panel DTO'su); panel rakip/sorgu önerileri; Kârmatik'in §9.1–9.4 çekmesi Yanıt'ın sunduğuyla ve Yanıt tohumunun
+  fixture'dan türettiğiyle birebir, `yanit:gap` görevleri; `max-age`; Yanıt'tan kaldırma → `peer_deleted`.
+- **B** Yanıt kod verir (`ek1_y_`) → Kârmatik kabul/onay → Yanıt onay; anahtar yenileme iki yönde; maliyet → kirli
+  → kâr turu → `karmatik.profit.updated` → Yanıt yalnız marj özetini öne alır; Kârmatik'ten kaldırma; §4.4 silme
+  kuralları zaman kaydırmayla (Yanıt 29 gün, Kârmatik 30 gün; yalnız test hesabının kaldırılmış bağlantılarının
+  kaldırılma anı geri alınır).
+- **C** negatifler iki yönde + kapsam `PATCH` iki yönde (geri alınan kapsamın verisi karşı tarafta hemen silinir).
+- **D** etkin Yanıt bağlantısı varken Kârmatik hesabı silinir: önce bağlantı kaldırılır ve Yanıt'a iletilir.
+- Hız sınırları gevşetilmez: koşu başına Yanıt → Kârmatik 2 claim, Kârmatik → Yanıt 1 claim, 1 Yanıt girişi.

@@ -623,6 +623,16 @@ cmd_test() {
     say "▶ $(basename "$f")"
     (cd "$ROOT/apps/api" && node --env-file=../../.env --import tsx "$f") || failed=1
   done
+  # Kârmatik ↔ Yanıt (Kârmatik deposunda, bun): yalnız iki sunucu da yerel.sh'in başlattığı yerel süreçlerse.
+  if [[ -f "$KARMATIK_DIR/scripts/ekosistem-e2e-yanit.ts" ]]; then
+    if port_is_ours karmatik && port_is_ours yanit; then
+      ran=1
+      say "▶ Kârmatik scripts/ekosistem-e2e-yanit.ts"
+      (cd "$KARMATIK_DIR" && bun --env-file=.env.development.local scripts/ekosistem-e2e-yanit.ts) || failed=1
+    else
+      say "– Kârmatik scripts/ekosistem-e2e-yanit.ts geçildi: önce 'yerel.sh up karmatik yanit'."
+    fi
+  fi
   if [[ -f "$KARMATIK_DIR/scripts/ekosistem-e2e.ts" ]]; then
     if [[ -n "$(listeners 3999)" ]]; then
       say "– Kârmatik scripts/ekosistem-e2e.ts geçildi: kendi Bun sunucusunu 3999'da açar; önce 'yerel.sh down karmatik'."
