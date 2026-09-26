@@ -989,16 +989,25 @@ async function main() {
   const tag = `e1-${Date.now().toString(36)}`;
   let exitCode = 0;
   let c: Ctx | null = null;
+  // Kept apart from `c`: a Yanıt tenant that was seeded must be deleted even when the rest of the set-up failed.
+  let yanitAccount: { yan: YanitAccount; api: YanitMerchant } | null = null;
   try {
     console.log(`\n▶ Hazırlık — hermetik test hesapları (${tag})`);
-    const [alt, yan] = await Promise.all([seedAltyapi(tag), seedYanit(tag)]);
+    const [altR, yanR] = await Promise.allSettled([seedAltyapi(tag), seedYanit(tag)]);
+    if (yanR.status === "fulfilled") {
+      const api = new YanitMerchant();
+      await api.login(yanR.value.email, yanR.value.password);
+      yanitAccount = { yan: yanR.value, api };
+    }
+    const failure = [altR, yanR].find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failure) throw failure.reason;
+    const alt = (altR as PromiseFulfilledResult<AltyapiAccount>).value;
+    const yan = yanitAccount!.yan;
     check(`altyapi test hesabı + fixture (${alt.storeSlug})`, true);
     check(`Yanıt test kiracısı + fixture (${yan.tenantId})`, true);
     const altApi = new AltyapiMerchant(alt.organizationId, alt.storeId);
     await altApi.login(alt.email, alt.password);
-    const yanApi = new YanitMerchant();
-    await yanApi.login(yan.email, yan.password);
-    c = { db: database.db, keys, queue, alt, altApi, yan, yanApi };
+    c = { db: database.db, keys, queue, alt, altApi, yan, yanApi: yanitAccount!.api };
     for (const [name, fn] of [
       ["A", scenarioA],
       ["B", scenarioB],
@@ -1018,19 +1027,22 @@ async function main() {
     check("hazırlık", false, err instanceof Error ? err.message : String(err));
   } finally {
     scenario = "temizlik";
+    if (c || yanitAccount) console.log("\n▶ Temizlik");
     if (c) {
-      console.log("\n▶ Temizlik");
       const open = await revokeOpenLinks(c);
       check("test hesaplarında açık bağlantı kalmadı", open.length === 0, `kaldırıldı: ${open.join(", ")}`);
+      console.log(`  – altyapi test hesabı ${c.alt.email} / mağaza ${c.alt.storeSlug} yerel DB'de kalır (silme ucu yok).`);
+    }
+    if (yanitAccount) {
       if (process.env.E2E_KORU === "1") {
-        console.log(`  – E2E_KORU=1: Yanıt test kiracısı bırakıldı (${c.yan.email})`);
+        console.log(`  – E2E_KORU=1: Yanıt test kiracısı bırakıldı (${yanitAccount.yan.email})`);
       } else {
-        const d = await c.yanApi.call("POST", "/api/account/delete", { confirm: "HESABIMI SİL" });
+        // Account deletion first removes every link of the tenant at its peers (revokeAllForTenant).
+        const d = await yanitAccount.api.call("POST", "/api/account/delete", { confirm: "HESABIMI SİL" });
         check("Yanıt test kiracısı silindi (hesap silme ucu)", d.status === 200, `HTTP ${d.status} ${d.text.slice(0, 200)}`);
-        const me = await c.yanApi.call("GET", "/api/auth/me");
+        const me = await yanitAccount.api.call("GET", "/api/auth/me");
         check("silinen hesabın oturumu geçersiz", me.status === 401, `HTTP ${me.status}`);
       }
-      console.log(`  – altyapi test hesabı ${c.alt.email} / mağaza ${c.alt.storeSlug} yerel DB'de kalır (silme ucu yok).`);
     }
     await database.close();
   }
