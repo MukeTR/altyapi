@@ -674,74 +674,83 @@ async function main() {
     const gateway = createRefundGateway(payments);
 
     const orderIds = new Map<string, string>();
-    for (const o of ORDERS) {
-      const marker = orderMarker(o.key);
-      const existing = await withTenantTx(db, scope, (tx) =>
-        tx.select({ id: orders.id, status: orders.status, confirmedAt: orders.confirmedAt }).from(orders).where(and(eq(orders.storeId, store.id), eq(orders.note, marker))).orderBy(desc(orders.createdAt)),
+    try {
+      for (const o of ORDERS) {
+        const marker = orderMarker(o.key);
+        const existing = await withTenantTx(db, scope, (tx) =>
+          tx.select({ id: orders.id, status: orders.status, confirmedAt: orders.confirmedAt }).from(orders).where(and(eq(orders.storeId, store.id), eq(orders.note, marker))).orderBy(desc(orders.createdAt)),
+        );
+        const done = existing.find((r) => r.confirmedAt !== null);
+        // A run that stopped between checkout and payment leaves an unpaid order: void it and start over.
+        for (const r of existing.filter((x) => x.status === "awaiting_payment")) await withTenantTx(db, scope, (tx) => cancelUnpaidOrder(tx, scope, r.id, "seed_restarted"));
+        if (done) {
+          orderIds.set(o.key, done.id);
+          continue;
+        }
+        const { token } = await createCart(db, scope, { currency: "TRY", locale: "tr" });
+        for (const l of o.lines) await addLine(cartDeps, scope, token, { variantId: variantIds.get(l.sku)!, quantity: l.quantity, properties: {} });
+        await setContact(cartDeps, scope, token, { email: `ekosistem-yerel+${o.key.toLowerCase()}@example.com`, phone: null, acceptsMarketing: false, note: marker });
+        const address = { firstName: "Deneme", lastName: `Müşteri ${o.key}`, line1: "Deneme Sokak No: 1", district: o.district, city: o.district, province: o.province, postalCode: null, countryCode: "TR", phone: "+905550000000" };
+        await setAddresses(cartDeps, scope, token, { shipping: address, billing: null, billingSameAsShipping: true });
+        const rates = await shippingOptions(cartDeps, scope, token);
+        if (!rates[0]) throw new Error("Kargo seçeneği çıkmadı.");
+        await selectShippingRate(cartDeps, scope, token, rates[0].id);
+        if (o.coupon) await applyCoupon(cartDeps, scope, token, o.coupon);
+        const at = new Date().toISOString();
+        const touch = { at, ...o.touch };
+        await setAttribution(cartDeps, scope, token, { firstTouch: touch, lastTouch: touch, consent: { analytics: true, marketing: false } });
+        const started = await startCheckout(checkoutDeps, scope, token, { provider: "iyzico", returnBaseUrl: "http://localhost:3001" }, { ip: "127.0.0.1", userAgent: "altyapi-tohum" });
+        const [attempt] = await withTenantTx(db, scope, (tx) =>
+          tx.select({ amount: paymentAttempts.amount, reference: paymentAttempts.providerReference }).from(paymentAttempts).where(eq(paymentAttempts.id, started.payment.attemptId)),
+        );
+        // Like a real callback, the body names its payment (iyzico: conversation id / token). Payment
+        // events are deduplicated by payload hash, so a bare {status, amount} would be taken for the
+        // same notification as an equal order in another store and never confirm this one.
+        const body = { status: "success", conversationId: attempt!.reference, amount: attempt!.amount.toString() };
+        const result = await handleIyzicoCallback(payments, started.payment.attemptId, { headers: {}, body, rawBody: JSON.stringify(body) });
+        if (result.outcome !== "paid") throw new Error(`${o.key} siparişi ödenmedi (${result.outcome}).`);
+        orderIds.set(o.key, started.orderId);
+        console.log(`  + sipariş ${o.key} #${started.orderNumber} ödendi (kart, yerel test)`);
+      }
+
+      // Card fee on the sale transaction (no adapter records one; see header).
+      await withTenantTx(db, scope, async (tx) => {
+        const sales = await tx
+          .select({ id: paymentTransactions.id, amount: paymentTransactions.amount })
+          .from(paymentTransactions)
+          .innerJoin(paymentAttempts, eq(paymentAttempts.id, paymentTransactions.paymentAttemptId))
+          .where(and(inArray(paymentAttempts.orderId, [...orderIds.values()]), eq(paymentTransactions.type, "sale"), isNull(paymentTransactions.feeAmount)));
+        for (const s of sales) await tx.update(paymentTransactions).set({ feeAmount: roundBps(s.amount, CARD_FEE.rateBps) + CARD_FEE.fixed }).where(eq(paymentTransactions.id, s.id));
+      });
+
+      // Partial return + refund (fulfil → return → receive over HTTP, refund via the stand-in)
+      for (const o of ORDERS.filter((x) => x.returnUnits > 0)) {
+        const id = orderIds.get(o.key)!;
+        let d = await get<OrderDetail>(`${base}/orders/${id}`);
+        const line = d.lines.find((l) => l.sku === o.lines[0]!.sku)!;
+        if (d.order.fulfillmentStatus === "unfulfilled") {
+          await post(`${base}/orders/${id}/fulfillments`, { carrierCode: "yurtici", trackingNumber: `YEREL${d.order.number}`, notifyCustomer: false });
+          d = await get<OrderDetail>(`${base}/orders/${id}`);
+        }
+        let ret = d.returns[0];
+        if (!ret) {
+          ret = await post<{ id: string; status: string }>(`${base}/orders/${id}/returns`, { lines: [{ orderLineId: line.id, quantity: o.returnUnits, reason: "Beden uymadı", restock: true }], reason: "Beden uymadı (yerel tohum)" });
+        }
+        if (ret.status === "approved") await post(`${base}/returns/${ret.id}/receive`, { restockLocationId: location.id });
+        const refund = await createRefund(db, gateway, ctx, id, { lines: [{ orderLineId: line.id, quantity: o.returnUnits }], returnId: ret.id, reason: "Beden uymadı (yerel tohum)", idempotencyKey: `yerel-tohum:${o.key}:iade` }, "127.0.0.1");
+        if (refund.status !== "succeeded") throw new Error(`${o.key} iadesi başarısız: ${refund.status}`);
+      }
+    } finally {
+      // Whatever went wrong above: an order this run left unpaid would be reconciled 45 minutes later by the
+      // worker's REAL iyzico adapter with the fake credentials (a call to the iyzico sandbox), so it is voided
+      // now; and the stand-in must not serve real checkouts: the connection stays, disabled.
+      const markers = ORDERS.map((o) => orderMarker(o.key));
+      const unpaid = await withTenantTx(db, scope, (tx) =>
+        tx.select({ id: orders.id }).from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.note, markers), eq(orders.status, "awaiting_payment"))),
       );
-      const done = existing.find((r) => r.confirmedAt !== null);
-      // A run that stopped between checkout and payment leaves an unpaid order: void it and start over.
-      for (const r of existing.filter((x) => x.status === "awaiting_payment")) await withTenantTx(db, scope, (tx) => cancelUnpaidOrder(tx, scope, r.id, "seed_restarted"));
-      if (done) {
-        orderIds.set(o.key, done.id);
-        continue;
-      }
-      const { token } = await createCart(db, scope, { currency: "TRY", locale: "tr" });
-      for (const l of o.lines) await addLine(cartDeps, scope, token, { variantId: variantIds.get(l.sku)!, quantity: l.quantity, properties: {} });
-      await setContact(cartDeps, scope, token, { email: `ekosistem-yerel+${o.key.toLowerCase()}@example.com`, phone: null, acceptsMarketing: false, note: marker });
-      const address = { firstName: "Deneme", lastName: `Müşteri ${o.key}`, line1: "Deneme Sokak No: 1", district: o.district, city: o.district, province: o.province, postalCode: null, countryCode: "TR", phone: "+905550000000" };
-      await setAddresses(cartDeps, scope, token, { shipping: address, billing: null, billingSameAsShipping: true });
-      const rates = await shippingOptions(cartDeps, scope, token);
-      if (!rates[0]) fail("Kargo seçeneği çıkmadı.");
-      await selectShippingRate(cartDeps, scope, token, rates[0].id);
-      if (o.coupon) await applyCoupon(cartDeps, scope, token, o.coupon);
-      const at = new Date().toISOString();
-      const touch = { at, ...o.touch };
-      await setAttribution(cartDeps, scope, token, { firstTouch: touch, lastTouch: touch, consent: { analytics: true, marketing: false } });
-      const started = await startCheckout(checkoutDeps, scope, token, { provider: "iyzico", returnBaseUrl: "http://localhost:3001" }, { ip: "127.0.0.1", userAgent: "altyapi-tohum" });
-      const [attempt] = await withTenantTx(db, scope, (tx) =>
-        tx.select({ amount: paymentAttempts.amount, reference: paymentAttempts.providerReference }).from(paymentAttempts).where(eq(paymentAttempts.id, started.payment.attemptId)),
-      );
-      // Like a real callback, the body names its payment (iyzico: conversation id / token). Payment
-      // events are deduplicated by payload hash, so a bare {status, amount} would be taken for the
-      // same notification as an equal order in another store and never confirm this one.
-      const body = { status: "success", conversationId: attempt!.reference, amount: attempt!.amount.toString() };
-      const result = await handleIyzicoCallback(payments, started.payment.attemptId, { headers: {}, body, rawBody: JSON.stringify(body) });
-      if (result.outcome !== "paid") fail(`${o.key} siparişi ödenmedi (${result.outcome}).`);
-      orderIds.set(o.key, started.orderId);
-      console.log(`  + sipariş ${o.key} #${started.orderNumber} ödendi (kart, yerel test)`);
+      for (const r of unpaid) await withTenantTx(db, scope, (tx) => cancelUnpaidOrder(tx, scope, r.id, "seed_aborted"));
+      await setConnectionStatus(db, ctx, connection.id, "disabled");
     }
-
-    // Card fee on the sale transaction (no adapter records one; see header).
-    await withTenantTx(db, scope, async (tx) => {
-      const sales = await tx
-        .select({ id: paymentTransactions.id, amount: paymentTransactions.amount })
-        .from(paymentTransactions)
-        .innerJoin(paymentAttempts, eq(paymentAttempts.id, paymentTransactions.paymentAttemptId))
-        .where(and(inArray(paymentAttempts.orderId, [...orderIds.values()]), eq(paymentTransactions.type, "sale"), isNull(paymentTransactions.feeAmount)));
-      for (const s of sales) await tx.update(paymentTransactions).set({ feeAmount: roundBps(s.amount, CARD_FEE.rateBps) + CARD_FEE.fixed }).where(eq(paymentTransactions.id, s.id));
-    });
-
-    // Partial return + refund (fulfil → return → receive over HTTP, refund via the stand-in)
-    for (const o of ORDERS.filter((x) => x.returnUnits > 0)) {
-      const id = orderIds.get(o.key)!;
-      let d = await get<OrderDetail>(`${base}/orders/${id}`);
-      const line = d.lines.find((l) => l.sku === o.lines[0]!.sku)!;
-      if (d.order.fulfillmentStatus === "unfulfilled") {
-        await post(`${base}/orders/${id}/fulfillments`, { carrierCode: "yurtici", trackingNumber: `YEREL${d.order.number}`, notifyCustomer: false });
-        d = await get<OrderDetail>(`${base}/orders/${id}`);
-      }
-      let ret = d.returns[0];
-      if (!ret) {
-        ret = await post<{ id: string; status: string }>(`${base}/orders/${id}/returns`, { lines: [{ orderLineId: line.id, quantity: o.returnUnits, reason: "Beden uymadı", restock: true }], reason: "Beden uymadı (yerel tohum)" });
-      }
-      if (ret.status === "approved") await post(`${base}/returns/${ret.id}/receive`, { restockLocationId: location.id });
-      const refund = await createRefund(db, gateway, ctx, id, { lines: [{ orderLineId: line.id, quantity: o.returnUnits }], returnId: ret.id, reason: "Beden uymadı (yerel tohum)", idempotencyKey: `yerel-tohum:${o.key}:iade` }, "127.0.0.1");
-      if (refund.status !== "succeeded") fail(`${o.key} iadesi başarısız: ${refund.status}`);
-    }
-
-    // The stand-in must not serve real checkouts: the connection stays, disabled.
-    await setConnectionStatus(db, ctx, connection.id, "disabled");
 
     // 6. Verification: the same §7.2 / §7.3 exports a linked peer reads (without a link).
     const exportDeps = { db, storeRootDomain: env.STORE_ROOT_DOMAIN, mediaBaseUrl: env.MEDIA_PUBLIC_BASE_URL ?? null } as unknown as EkosistemServerDeps;
